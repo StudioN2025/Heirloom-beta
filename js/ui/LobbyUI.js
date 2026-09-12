@@ -13,15 +13,11 @@ export class LobbyUI {
         this.myName = name;
     }
 
-    /**
-     * Открыть лобби.
-     */
     open() {
         const modal = document.getElementById('lobby-modal');
         const content = document.getElementById('lobby-content');
         if (!modal || !content) return;
 
-        // Привязываем колбэки
         this.lobby.onPlayersChanged = () => this.renderPlayers();
         this.lobby.onChatMessage = (msg) => this.appendChat(msg);
         this.lobby.onError = (err) => this.showError(err);
@@ -29,11 +25,9 @@ export class LobbyUI {
         content.innerHTML = this._renderLayout();
         modal.classList.remove('hidden');
 
-        // Первый рендер
         this.renderPlayers();
         this.renderChat();
 
-        // Обработчики
         document.getElementById('lobby-chat-send')?.addEventListener('click', () => this._onSendChat());
         document.getElementById('lobby-chat-input')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this._onSendChat();
@@ -65,6 +59,9 @@ export class LobbyUI {
     _renderLayout() {
         const isHost = this.net.isHost;
         const roomId = this.net.roomId || '—';
+        const serverHost = window._serverHost || '26.80.246.235';
+        const serverPort = window._serverPort || 9000;
+        const connectionString = `${serverHost}:${serverPort}`;
 
         return `
             <div style="display:flex;flex-direction:column;height:100%;background:#111827;">
@@ -73,12 +70,23 @@ export class LobbyUI {
                     <div>
                         <div style="font-size:14px;font-weight:bold;color:#eab308;">🎮 ЛОББИ</div>
                         <div style="font-size:10px;color:#6b7280;margin-top:2px;">
-                            Room ID: <span style="color:#22c55e;font-family:monospace;cursor:pointer;" onclick="navigator.clipboard.writeText('${roomId}');this.textContent='Скопировано!'">${roomId}</span>
+                            Room ID: <span id="lobby-room-id" style="color:#22c55e;font-family:monospace;cursor:pointer;"
+                                onclick="navigator.clipboard.writeText('${roomId}');this.textContent='Скопировано!';setTimeout(()=>this.textContent='${roomId}',1500)">${roomId}</span>
+                        </div>
+                        <div style="font-size:10px;color:#6b7280;margin-top:2px;">
+                            Сервер: <span id="lobby-server-addr" style="color:#3b82f6;font-family:monospace;cursor:pointer;"
+                                onclick="navigator.clipboard.writeText('${connectionString}');this.textContent='Скопировано!';setTimeout(()=>this.textContent='${connectionString}',1500)">${connectionString}</span>
                         </div>
                     </div>
-                    <button id="lobby-btn-leave" style="padding:6px 12px;background:#991b1b;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;">
-                        ← Выйти
-                    </button>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <button id="lobby-btn-copy" style="padding:6px 10px;background:#1d4ed8;color:white;border:none;border-radius:4px;cursor:pointer;font-size:10px;"
+                            onclick="navigator.clipboard.writeText('Room ID: ${roomId}\\nСервер: ${connectionString}');this.textContent='✅ Скопировано!';setTimeout(()=>this.textContent='📋 Скопировать для друга',2000)">
+                            📋 Скопировать для друга
+                        </button>
+                        <button id="lobby-btn-leave" style="padding:6px 12px;background:#991b1b;color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;">
+                            ← Выйти
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Основная область -->
@@ -164,7 +172,6 @@ export class LobbyUI {
             `;
         }).join('');
 
-        // Обновляем кнопку старта
         const startBtn = document.getElementById('lobby-btn-start');
         const startHint = document.getElementById('lobby-start-hint');
         if (startBtn && startHint) {
@@ -276,25 +283,15 @@ export class LobbyUI {
     _pickCountry(countryId) {
         const myPeerId = this.net.myPeerId;
 
-        // Проверяем, что страна свободна
         const taken = this.lobby.players.find(p => p.countryId === countryId && p.peerId !== myPeerId);
         if (taken) {
             this.showError('Эта страна уже занята');
             return;
         }
 
-        // Если хост — просто выбираем
-        if (this.net.isHost) {
-            this.lobby.selectCountry(myPeerId, countryId);
-        } else {
-            // Клиент — отправляем хосту
-            this.lobby.selectCountry(myPeerId, countryId);
-        }
-
+        this.lobby.selectCountry(myPeerId, countryId);
         document.getElementById('country-picker-modal').classList.add('hidden');
     }
-
-    // ── Ошибки ────────────────────────────────────────────────────────────
 
     showError(text) {
         if (window.addNotification) {
