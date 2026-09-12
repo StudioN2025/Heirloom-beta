@@ -41,7 +41,7 @@ export class NetworkLobby {
             this._removePlayer(peerId);
         };
 
-        this._addSystemMessage(`Лобби создано. Room ID: ${this.net.roomId}`);
+        this._addSystemMessage('Лобби создано. Room ID: ' + this.net.roomId);
         this._refreshCountries();
         if (this.onPlayersChanged) this.onPlayersChanged();
     }
@@ -86,7 +86,7 @@ export class NetworkLobby {
         if (this.players.find(p => p.peerId === peerId)) return;
 
         this.players.push({
-            peerId,
+            peerId: peerId,
             name: 'player_' + peerId.slice(0, 4),
             countryId: countryId || null,
             isHost: false,
@@ -150,7 +150,7 @@ export class NetworkLobby {
         p.countryId = countryId;
         p.isReady = true;
 
-        this._addSystemMessage(`${p.name} выбрал ${countryId}`);
+        this._addSystemMessage(p.name + ' выбрал ' + countryId);
 
         if (this.onPlayersChanged) this.onPlayersChanged();
 
@@ -269,7 +269,7 @@ export class NetworkLobby {
                             isReady: false
                         };
                         this.players.push(p);
-                        this._addSystemMessage(`${p.name} подключился`);
+                        this._addSystemMessage(p.name + ' подключился');
                     } else {
                         p.name = action.name || p.name;
                     }
