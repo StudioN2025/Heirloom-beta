@@ -114,6 +114,12 @@ async function init() {
         document.querySelectorAll('button').forEach(function(b) { b.style.fontSize = (parseFloat(savedScale) * 11) + 'px'; });
     }
 
+    // ── БЛОКИРУЕМ КНОПКИ ДО ЗАГРУЗКИ КАРТЫ ──
+    const btnPlay = document.getElementById('btn-play');
+    const btnNetwork = document.getElementById('btn-network');
+    if (btnPlay) { btnPlay.disabled = true; btnPlay.style.opacity = '0.6'; btnPlay.style.cursor = 'wait'; btnPlay.textContent = '⏳ ЗАГРУЗКА...'; }
+    if (btnNetwork) { btnNetwork.disabled = true; btnNetwork.style.opacity = '0.6'; btnNetwork.style.cursor = 'wait'; btnNetwork.textContent = '⏳ ЗАГРУЗКА...'; }
+
     // ЗАГРУЖАЕМ КАРТУ СРАЗУ — до показа меню
     await loadGameData();
 }
@@ -147,6 +153,23 @@ async function loadGameData() {
 
     gameDataLoaded = true;
     console.log('[Main] Карта загружена. Стран:', world.getAllCountries().length);
+
+    // ── РАЗБЛОКИРУЕМ КНОПКИ ──
+    const btnPlay = document.getElementById('btn-play');
+    const btnNetwork = document.getElementById('btn-network');
+
+    if (btnPlay) {
+        btnPlay.disabled = false;
+        btnPlay.style.opacity = '1';
+        btnPlay.style.cursor = 'pointer';
+        btnPlay.textContent = '🗺️ НАЧАТЬ ИГРУ';
+    }
+    if (btnNetwork) {
+        btnNetwork.disabled = false;
+        btnNetwork.style.opacity = '1';
+        btnNetwork.style.cursor = 'pointer';
+        btnNetwork.textContent = '🌐 СЕТЕВАЯ ИГРА';
+    }
 }
 
 async function preloadResources() {
@@ -176,9 +199,19 @@ function setupEvents() {
     const closeWindowBtn = document.getElementById('close-window');
     const closeSidebarBtn = document.getElementById('close-sidebar');
 
-    if (btnPlay) btnPlay.onclick = () => showCountrySelection();
+    if (btnPlay) btnPlay.onclick = () => {
+        if (!gameDataLoaded) {
+            addNotification('⚠️ Карта ещё загружается. Подождите...', 'war');
+            return;
+        }
+        showCountrySelection();
+    };
 
     document.getElementById('btn-network')?.addEventListener('click', () => {
+        if (!gameDataLoaded) {
+            addNotification('⚠️ Карта ещё загружается. Подождите...', 'war');
+            return;
+        }
         networkMenu.open();
     });
 
