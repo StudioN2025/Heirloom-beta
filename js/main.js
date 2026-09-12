@@ -170,7 +170,6 @@ function setupEvents() {
 
     if (btnPlay) btnPlay.onclick = () => loadGameData();
 
-    // СЕТЕВАЯ ИГРА
     document.getElementById('btn-network')?.addEventListener('click', () => {
         networkMenu.open();
     });
@@ -674,6 +673,9 @@ function setupEvents() {
         console.log('[Net] Подключено, roomId:', network.roomId);
     };
 
+    // ВАЖНО: НЕ перезаписываем network.onPlayerJoined / onPlayerLeft
+    // Они уже привязаны в NetworkLobby.hostInit / clientInit
+
     networkLobby.onGameStart = (players) => {
         console.log('[Lobby] Старт игры. Игроки:', players);
 
@@ -687,14 +689,6 @@ function setupEvents() {
         } else {
             addNotification('⚠️ Страна не выбрана!', 'war');
         }
-    };
-
-    network.onPlayerJoined = (peerId, countryId) => {
-        console.log('[Net] Игрок подключился:', peerId);
-    };
-
-    network.onPlayerLeft = (peerId) => {
-        console.log('[Net] Игрок отключился:', peerId);
     };
 }
 
@@ -1279,7 +1273,7 @@ function startGameLoop() {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `autosave_${gameState.days}.hrl`;
+                a.download = 'autosave_' + gameState.days + '.hrl';
                 a.click();
                 URL.revokeObjectURL(url);
             }
@@ -1327,16 +1321,14 @@ function updateArmyPanel() {
     for (const army of armies) {
         const isSelected = gameState._selectedArmyId === army.id;
         const unitCount = [...army.unitIds].filter(id => entities.active[id]).length;
-        html += `
-            <div class="army-card ${isSelected ? 'selected' : ''}" onclick="window.selectArmy(${army.id})" style="border-color:${army.color}">
-                <div class="army-card-color" style="background:${army.color}"></div>
-                <div class="army-card-info">
-                    <div class="army-card-name">${army.name}</div>
-                    <div class="army-card-count">${unitCount} ${t('army.unitCount')}</div>
-                </div>
-                <button class="army-card-disband" onclick="event.stopPropagation(); window.disbandArmy(${army.id})" title="${t('army.disbandArmy')}">✕</button>
-            </div>
-        `;
+        html += '<div class="army-card ' + (isSelected ? 'selected' : '') + '" onclick="window.selectArmy(' + army.id + ')" style="border-color:' + army.color + '">';
+        html += '<div class="army-card-color" style="background:' + army.color + '"></div>';
+        html += '<div class="army-card-info">';
+        html += '<div class="army-card-name">' + army.name + '</div>';
+        html += '<div class="army-card-count">' + unitCount + ' ' + t('army.unitCount') + '</div>';
+        html += '</div>';
+        html += '<button class="army-card-disband" onclick="event.stopPropagation(); window.disbandArmy(' + army.id + ')" title="' + t('army.disbandArmy') + '">✕</button>';
+        html += '</div>';
     }
     cards.innerHTML = html;
 }
@@ -1373,15 +1365,12 @@ function showCountrySelection() {
             const flagKey = cInfo.flag || c.id;
             const btn = document.createElement('button');
             btn.className = 'w-full text-left p-3 border rounded mb-2 hover:bg-white/20 transition';
-            btn.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <img src="assets/flags/${flagKey}.png" style="width:32px;height:22px;border-radius:3px;" onerror="this.style.display='none'">
-                    <div>
-                        <div class="font-bold text-lg">${cInfo.name || c.id.toUpperCase()}</div>
-                        <div class="text-xs opacity-70">${c.size} провинций</div>
-                    </div>
-                </div>
-            `;
+            btn.innerHTML = '<div class="flex items-center gap-2">' +
+                '<img src="assets/flags/' + flagKey + '.png" style="width:32px;height:22px;border-radius:3px;" onerror="this.style.display=\'none\'">' +
+                '<div>' +
+                '<div class="font-bold text-lg">' + (cInfo.name || c.id.toUpperCase()) + '</div>' +
+                '<div class="text-xs opacity-70">' + c.size + ' провинций</div>' +
+                '</div></div>';
             btn.onclick = () => startGame(c.id);
             list.appendChild(btn);
         });
@@ -1398,15 +1387,12 @@ function showCountrySelection() {
             const flagKey = cInfo.flag || c.id;
             const btn = document.createElement('button');
             btn.className = 'w-full text-left p-2 border rounded mb-1 hover:bg-white/10 transition text-sm';
-            btn.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <img src="assets/flags/${flagKey}.png" style="width:24px;height:16px;border-radius:2px;" onerror="this.style.display='none'">
-                    <div>
-                        <div class="font-bold">${cInfo.name || c.id.toUpperCase()}</div>
-                        <div class="text-xs opacity-50">${c.size} провинций</div>
-                    </div>
-                </div>
-            `;
+            btn.innerHTML = '<div class="flex items-center gap-2">' +
+                '<img src="assets/flags/' + flagKey + '.png" style="width:24px;height:16px;border-radius:2px;" onerror="this.style.display=\'none\'">' +
+                '<div>' +
+                '<div class="font-bold">' + (cInfo.name || c.id.toUpperCase()) + '</div>' +
+                '<div class="text-xs opacity-50">' + c.size + ' провинций</div>' +
+                '</div></div>';
             btn.onclick = () => startGame(c.id);
             list.appendChild(btn);
         });
@@ -1430,7 +1416,7 @@ function startGame(countryId) {
     gameState.gameDate = new Date(1936, 0, 1);
 
     const cells = Array.from(world.getCountryCells(countryId));
-    console.log(`📋 Клетки страны ${countryId}: ${cells.length}`);
+    console.log('📋 Клетки страны ' + countryId + ': ' + cells.length);
 
     gameState.manpower = cells.length * 1000;
     gameState.maxManpower = cells.length * 1000;
@@ -1438,7 +1424,7 @@ function startGame(countryId) {
     if (cells.length > 0) {
         const sortedCells = cells.sort();
         const capital = sortedCells[0].split(',').map(Number);
-        console.log(`🏰 Первая клетка: (${capital[0]}, ${capital[1]})`);
+        console.log('🏰 Первая клетка: (' + capital[0] + ', ' + capital[1] + ')');
 
         for (let i = 0; i < 3; i++) {
             const x = capital[0] + (i % 2);
@@ -1447,7 +1433,7 @@ function startGame(countryId) {
             if (world.getCell(x, y) === countryId) {
                 const unitId = entities.createEntity(countryId, 0, x, y, 0);
                 if (combat) combat.initUnit(unitId);
-                console.log(`✅ Создан юнит ${unitId} в (${x},${y})`);
+                console.log('✅ Создан юнит ' + unitId + ' в (' + x + ',' + y + ')');
             }
         }
     }
@@ -1478,8 +1464,8 @@ function saveGame() {
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = String(now.getFullYear()).slice(-2);
-    const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-    const fileName = `${gameState.myCountryId.toUpperCase()}_${day}.${month}.${year}_${time}.hrl`;
+    const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
+    const fileName = gameState.myCountryId.toUpperCase() + '_' + day + '.' + month + '.' + year + '_' + time + '.hrl';
 
     const saveData = {
         version: '5.0',
@@ -1568,24 +1554,22 @@ function loadGame() {
 function showLoadingScreen() {
     const div = document.createElement('div');
     div.id = 'loading-screen';
-    div.innerHTML = `
-        <div style="position:fixed;inset:0;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:'Special Elite',monospace">
-            <div style="font-size:48px;margin-bottom:20px;">⚙️</div>
-            <div style="font-size:24px;margin-bottom:10px;color:#eab308;letter-spacing:.2em">HEIRLOOM</div>
-            <div style="font-size:14px;margin-bottom:30px;color:#888;letter-spacing:.15em">STRATEGY</div>
-            <div style="width:300px;height:8px;background:#1f2937;border-radius:4px;overflow:hidden;border:1px solid #374151">
-                <div id="loading-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#eab308,#fbbf24);transition:width 0.4s ease"></div>
-            </div>
-            <div id="loading-text" style="margin-top:16px;font-size:12px;color:#9ca3af;letter-spacing:.1em">${t('ui.loading')}</div>
-        </div>
-    `;
+    div.innerHTML = '<div style="position:fixed;inset:0;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:\'Special Elite\',monospace">' +
+        '<div style="font-size:48px;margin-bottom:20px;">⚙️</div>' +
+        '<div style="font-size:24px;margin-bottom:10px;color:#eab308;letter-spacing:.2em">HEIRLOOM</div>' +
+        '<div style="font-size:14px;margin-bottom:30px;color:#888;letter-spacing:.15em">STRATEGY</div>' +
+        '<div style="width:300px;height:8px;background:#1f2937;border-radius:4px;overflow:hidden;border:1px solid #374151">' +
+        '<div id="loading-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#eab308,#fbbf24);transition:width 0.4s ease"></div>' +
+        '</div>' +
+        '<div id="loading-text" style="margin-top:16px;font-size:12px;color:#9ca3af;letter-spacing:.1em">' + t('ui.loading') + '</div>' +
+        '</div>';
     document.body.appendChild(div);
 }
 
 function updateLoadingBar(percent, text) {
     const bar = document.getElementById('loading-bar');
     const label = document.getElementById('loading-text');
-    if (bar) bar.style.width = `${percent}%`;
+    if (bar) bar.style.width = percent + '%';
     if (label) label.textContent = text;
 }
 
