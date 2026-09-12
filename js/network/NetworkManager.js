@@ -100,9 +100,6 @@ export class NetworkManager {
                 gameDate: this.gs.gameDate.toISOString(),
                 days: this.gs.days
             });
-
-            // ВАЖНО: не вызываем onPlayerJoined здесь — клиент добавится через lobby_join
-            // (иначе будет двойное добавление и неправильное имя)
         });
 
         conn.on('data', (data) => {
@@ -204,6 +201,11 @@ export class NetworkManager {
     _handleData(fromPeerId, data) {
         if (!data || !data.type) return;
 
+        // СНАЧАЛА — синхронизация игрового состояния
+        if (window._networkSync && window._networkSync.handleMessage(fromPeerId, data)) {
+            return;
+        }
+
         switch (data.type) {
             case 'welcome':
                 this.hostPlayerCountry = data.hostCountry;
@@ -219,11 +221,9 @@ export class NetworkManager {
                 break;
 
             case 'action':
-                // Лобби обрабатывает свои сообщения
                 if (window._networkLobby) {
                     window._networkLobby.handleAction(fromPeerId, data.action);
                 }
-                // Игровые действия
                 if (this.onPlayerAction) this.onPlayerAction(fromPeerId, data.action);
                 break;
 
