@@ -38,7 +38,7 @@ body {
     inset: 0;
     z-index: 1000;
     background: radial-gradient(circle, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.95) 100%),
-                url('../assets/hoi5-backend.png') center/cover;
+                url('../assets/loading-screen.png') center/cover;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -120,7 +120,7 @@ body {
     align-items: center;
     justify-content: center;
     background: radial-gradient(circle, rgba(0,0,0,0.4), rgba(0,0,0,0.9)),
-                url('../assets/uploading-screan.png') center/cover;
+                url('../assets/loading-screen.png') center/cover;
 }
 
 .select-card {
@@ -344,15 +344,20 @@ body {
 /* ========== ОКНО ИНФОРМАЦИИ ========== */
 #info-window {
     position: fixed;
-    top: 100px;
-    left: 16px;
-    width: 560px;
-    max-width: calc(100vw - 32px);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85vw;
+    height: 85vh;
+    max-width: 1200px;
     background: var(--panel-bg);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     z-index: 200;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .window-header {
@@ -387,8 +392,9 @@ body {
 
 #window-content {
     padding: 16px;
-    max-height: 65vh;
-    overflow-y: auto;
+    flex: 1;
+    overflow: auto;
+    overflow-x: auto;
 }
 
 /* ========== КАНВАС ========== */
@@ -990,7 +996,7 @@ body {
     .hq-folder {
         padding: 1.5rem;
     }
-    
+
     #top-bar {
         height: auto;
         min-height: 44px;
@@ -998,35 +1004,43 @@ body {
         gap: 6px;
         font-size: 10px;
     }
-    
+
     .separator {
         display: none;
     }
-    
+
     .speed-btn {
         padding: 3px 6px;
         font-size: 9px;
     }
-    
+
     .date-display {
         font-size: 9px;
         min-width: 90px;
     }
-    
+
     #game-tabs {
         left: 8px;
         right: 8px;
-        top: auto;
         top: 48px;
     }
-    
+
     .tab-btn {
         flex: 1;
         text-align: center;
         padding: 6px 8px;
         font-size: 8px;
     }
-    
+
+    #info-window {
+        width: 95vw;
+        height: 90vh;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        max-width: none;
+    }
+
     #info-window,
     #info-sidebar {
         left: 8px;
@@ -1034,25 +1048,49 @@ body {
         width: auto;
         top: 90px;
     }
-    
+
     .select-card {
         width: 90vw;
         padding: 1rem;
     }
-    
+
     .resources-grid {
         grid-template-columns: repeat(3, 1fr);
         gap: 4px;
     }
-    
+
     .recruit-card {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .btn-recruit {
         text-align: center;
         margin-top: 8px;
+    }
+
+    #army-panel {
+        left: 4px;
+        right: 4px;
+        transform: none;
+        max-width: none;
+        border-radius: 8px 8px 0 0;
+    }
+
+    .army-card {
+        padding: 4px 6px;
+        font-size: 9px;
+        min-height: 28px;
+    }
+
+    .army-card-name {
+        font-size: 9px;
+    }
+
+    #btn-create-army {
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
     }
 }
 
@@ -1061,12 +1099,14 @@ body {
         font-size: 12px;
         min-width: 60px;
     }
-    
+
     #country-list button {
         font-size: 10px;
         padding: 8px;
     }
-    /* ========== ЭКРАН ЗАГРУЗКИ ========== */
+}
+
+/* ========== ЭКРАН ЗАГРУЗКИ ========== */
 #loading-screen {
     animation: fadeIn 0.3s ease;
 }
@@ -1080,7 +1120,7 @@ body {
     transition: width 0.3s ease;
     box-shadow: 0 0 10px rgba(234, 179, 8, 0.5);
 }
-}
+
 /* Флаги */
 .flag-icon {
     width: 32px;
@@ -1104,4 +1144,130 @@ body {
     display: inline-block;
     vertical-align: middle;
     margin-right: 4px;
+}
+
+/* ========== ПАНЕЛЬ АРМИЙ (HOI4-style) ========== */
+#army-panel {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(17, 24, 39, 0.95);
+    border: 1px solid #374151;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    padding: 6px 10px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 90vw;
+    backdrop-filter: blur(8px);
+}
+
+#army-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #9ca3af;
+    white-space: nowrap;
+    border-right: 1px solid #374151;
+    padding-right: 8px;
+}
+
+#army-count {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+#btn-create-army {
+    background: #15803d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+#btn-create-army:hover {
+    background: #16a34a;
+}
+
+#army-cards {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 2px 0;
+    scrollbar-width: thin;
+    scrollbar-color: #374151 transparent;
+}
+
+.army-card {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    font-size: 11px;
+    color: white;
+    min-height: 32px;
+}
+.army-card:hover {
+    background: rgba(255,255,255,0.1);
+    transform: translateY(-1px);
+}
+.army-card.selected {
+    border-color: #fbbf24;
+    background: rgba(251,191,36,0.15);
+}
+
+.army-card-color {
+    width: 10px;
+    height: 24px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.army-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.army-card-name {
+    font-weight: bold;
+    font-size: 10px;
+}
+
+.army-card-count {
+    font-size: 8px;
+    opacity: 0.7;
+}
+
+.army-card-disband {
+    background: #991b1b;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    width: 16px;
+    height: 16px;
+    font-size: 8px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+.army-card:hover .army-card-disband {
+    display: flex;
 }

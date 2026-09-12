@@ -1,13 +1,31 @@
 // helpers.js — Вспомогательные функции
 
-import { COUNTRIES } from '../data/Countries.js';
+import { COUNTRIES, getIdeologyData } from '../data/Countries.js';
+import { getCurrentLanguage, t } from '../i18n.js';
+
+// Маппинг идеологий для отображения
+const IDEOLOGY_DISPLAY = {
+    'ru': { 'Фашизм': 'Фашизм', 'Демократия': 'Демократия', 'Коммунизм': 'Коммунизм', 'Нейтралитет': 'Нейтралитет' },
+    'en': { 'Фашизм': 'Fascism', 'Демократия': 'Democracy', 'Коммунизм': 'Communism', 'Нейтралитет': 'Neutrality' }
+};
+
+export function translateIdeology(ideology) {
+    var lang = getCurrentLanguage();
+    var map = IDEOLOGY_DISPLAY[lang] || IDEOLOGY_DISPLAY['ru'];
+    return map[ideology] || ideology;
+}
 
 export function getCountryInfo(id) {
-    return COUNTRIES[id] || { 
-        name: id.toUpperCase(), 
-        color: generateColor(id), 
-        leader: "Неизвестно", 
-        ideology: "Нейтралитет" 
+    const c = COUNTRIES[id];
+    if (!c) return { name: id.toUpperCase(), color: generateColor(id), leader: "Неизвестно", ideology: "Нейтралитет" };
+    var lang = getCurrentLanguage();
+    const ideData = getIdeologyData(id, c.ideology);
+    return {
+        name: lang === 'en' ? (ideData.nameEn || c.nameEn || c.name) : (ideData.name || c.name),
+        color: ideData.color || c.color,
+        leader: lang === 'en' ? (ideData.leaderEn || c.leader || "Неизвестно") : (ideData.leader || c.leader || "Неизвестно"),
+        ideology: translateIdeology(c.ideology),
+        flag: ideData.flag || id,
     };
 }
 

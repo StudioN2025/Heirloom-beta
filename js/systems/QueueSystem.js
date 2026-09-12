@@ -1,31 +1,33 @@
-// QueueSystem.js — Очереди обучения войск и строительства
+// QueueSystem.js — УСТАРЕЛО. Используйте ProductionSystem.
+// Оставлен для совместимости. В main.js не подключается.
+// Не используется игровой логикой — вся очередь производства теперь в ProductionSystem.
 
 import { addNotification } from '../utils/helpers.js';
 
-// Стоимость и время обучения/строительства
+// Стоимость и время обучения/строительства (синхронизировано с ProductionSystem)
 export const TRAIN_DEFS = {
-    infantry: { name: 'Пехота',    icon: '💂', equipment: 100, manpower: 1000, days: 7  },
-    tank:     { name: 'Танк',      icon: '🚜', equipment: 800, manpower: 500,  days: 21 },
+    infantry: { name: 'Пехота',    icon: '💂', equipment: 100, manpower: 1000, days: 30 },
+    tank:     { name: 'Танк',      icon: '🚜', equipment: 800, manpower: 500,  days: 60 },
 };
 
 export const BUILD_DEFS = {
-    factory:  { name: 'Завод',     icon: '🏭', equipment: 500, days: 14 },
-    port:     { name: 'Порт',      icon: '⚓', equipment: 300, days: 10 },
-    fort:     { name: 'Укрепление',icon: '🛡️', equipment: 200, days: 7  },
+    factory:  { name: 'Завод',     icon: '🏭', equipment: 500, days: 90 },
+    port:     { name: 'Порт',      icon: '⚓', equipment: 300, days: 60 },
 };
 
+/**
+ * @deprecated Используйте ProductionSystem.
+ */
 export class QueueSystem {
     constructor(world, entities, gameState) {
         this.world      = world;
         this.entities   = entities;
         this.gs         = gameState;
 
-        // [{ type:'train'|'build', id, x, y, daysLeft, totalDays, unitType?, buildingType? }]
         this.queue = [];
         this._nextId = 1;
     }
 
-    // Добавить обучение юнита (x,y — клетка где появится)
     queueTrain(unitType, x, y) {
         const def = TRAIN_DEFS[unitType];
         if (!def) return false;
@@ -53,7 +55,6 @@ export class QueueSystem {
         return true;
     }
 
-    // Добавить строительство здания
     queueBuild(buildingType, x, y) {
         const def = BUILD_DEFS[buildingType];
         if (!def) return false;
@@ -80,7 +81,6 @@ export class QueueSystem {
         return true;
     }
 
-    // Вызывается раз в игровой день
     update() {
         const done = [];
         for (const item of this.queue) {
@@ -92,13 +92,12 @@ export class QueueSystem {
         for (const item of done) {
             if (item.type === 'train') {
                 const typeNum = item.unitType === 'tank' ? 1 : 0;
-                // Если клетка ещё наша — ставим туда или рядом
                 let placed = false;
                 for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) {
                     const nx = item.x + dx, ny = item.y + dy;
                     if (this.world.getCell(nx, ny) === this.gs.myCountryId
                         && !this.entities.getUnitAt(nx, ny)) {
-                        this.entities.createEntity(this.gs.myCountryId, typeNum, nx, ny);
+                        this.entities.createEntity(this.gs.myCountryId, typeNum, nx, ny, 0);
                         placed = true;
                         break;
                     }
@@ -124,7 +123,6 @@ export class QueueSystem {
         const idx = this.queue.findIndex(i => i.id === id);
         if (idx === -1) return;
         const item = this.queue[idx];
-        // Возвращаем половину ресурсов
         if (item.type === 'train') {
             const def = TRAIN_DEFS[item.unitType];
             this.gs.equipment += Math.floor(def.equipment / 2);

@@ -2,7 +2,6 @@
 
 import { addNotification } from '../utils/helpers.js';
 
-// Стоимость и время обучения (одинаково для всех)
 export const UNIT_COSTS = {
     infantry: { equipment: 100, manpower: 1000, days: 30 },
     tank:     { equipment: 800, manpower: 500,  days: 60 },
@@ -12,9 +11,6 @@ export const BUILDING_COSTS = {
     port:    { equipment: 300, days: 60 },
 };
 
-// Ресурсы ИИ-стран (упрощённо: бесплатно, но время соблюдается)
-const AI_RESOURCE_SCALE = 1.0;
-
 export class ProductionSystem {
     constructor(world, entities, gameState, combat) {
         this.world     = world;
@@ -22,11 +18,8 @@ export class ProductionSystem {
         this.gs        = gameState;
         this.combat    = combat;
 
-        // countryId → [{ type:'unit'|'building', unitType, buildingType, x, y, daysLeft, totalDays }]
         this.queues = new Map();
     }
-
-    // ── Ставим в очередь (игрок) ──────────────────────────────────────────────
 
     enqueueTraining(x, y, unitType) {
         const myId = this.gs.myCountryId;
@@ -43,6 +36,22 @@ export class ProductionSystem {
         }
         if (this.world.getCell(x, y) !== myId) {
             addNotification('⚠️ Только на своей территории!', 'war');
+            return false;
+        }
+        if (this.world.isWater(x, y)) {
+            addNotification('⚠️ Нельзя обучать в воде!', 'war');
+            return false;
+        }
+
+        const existingUnit = this.entities.getUnitAt(x, y);
+        if (existingUnit) {
+            addNotification('⚠️ На этой клетке уже есть юнит!', 'war');
+            return false;
+        }
+        const queue = this.queues.get(myId) || [];
+        const alreadyTraining = queue.some(q => q.type === 'unit' && q.x === x && q.y === y);
+        if (alreadyTraining) {
+            addNotification('⚠️ На этой клетке уже идёт обучение!', 'war');
             return false;
         }
 
@@ -85,8 +94,6 @@ export class ProductionSystem {
         return true;
     }
 
-    // ── ИИ ставит в очередь (бесплатно, но время соблюдается) ────────────────
-
     aiEnqueueUnit(countryId, x, y, unitType) {
         const cost = UNIT_COSTS[unitType];
         if (!cost) return false;
@@ -101,13 +108,9 @@ export class ProductionSystem {
         return true;
     }
 
-    // ── Обновление (раз в день) ───────────────────────────────────────────────
-
     update() {
         for (const [countryId, queue] of this.queues) {
-            // Считаем сколько заводов у страны (бонус к скорости)
             const factoryBonus = this._countFactories(countryId);
-            // 1 завод = +2% скорости (максимум x2)
             const speedMult = Math.min(2.0, 1 + factoryBonus * 0.02);
 
             const finished = [];
@@ -116,10 +119,8 @@ export class ProductionSystem {
                 if (item.daysLeft <= 0) finished.push(item);
             }
 
-            // Убираем завершённые
             this.queues.set(countryId, queue.filter(i => i.daysLeft > 0));
 
-            // Обрабатываем завершённые
             for (const item of finished) {
                 if (item.type === 'unit') {
                     this._spawnUnit(countryId, item);
@@ -130,8 +131,6 @@ export class ProductionSystem {
         }
     }
 
-    // ── Геттеры для рендерера ─────────────────────────────────────────────────
-
     getPlayerQueue() {
         return this.queues.get(this.gs.myCountryId) || [];
     }
@@ -140,8 +139,6 @@ export class ProductionSystem {
         const myId = this.gs.myCountryId;
         return (this.queues.get(myId) || []).find(q => q.x === x && q.y === y) || null;
     }
-
-    // ── Приватные ─────────────────────────────────────────────────────────────
 
     _enqueue(countryId, item) {
         if (!this.queues.has(countryId)) this.queues.set(countryId, []);
@@ -157,9 +154,8 @@ export class ProductionSystem {
             return;
         }
         const typeNum = item.unitType === 'infantry' ? 0 : 1;
-        const uid = this.entities.createEntity(countryId, typeNum, pos.x, pos.y);
+        const uid = this.entities.createEntity(countryId, typeNum, pos.x, pos.y, 0);
 
-        // Инициализируем org в боевой системе
         if (this.combat && this.combat.initUnit) {
             this.combat.initUnit(uid);
         }
@@ -171,7 +167,6 @@ export class ProductionSystem {
     }
 
     _completeBuilding(countryId, item) {
-        // Проверяем что клетка ещё наша
         if (this.world.getCell(item.x, item.y) !== countryId) return;
         if (this.world.hasBuilding(item.x, item.y, item.buildingType)) return;
         this.world.addBuilding(item.x, item.y, item.buildingType);

@@ -3,19 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>HOI5 Remastered — Глобальная Стратегия</title>
+    <title>Heirloom — Глобальная Стратегия</title>
     <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=6.0">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 <body oncontextmenu="return false;">
 
 <div id="main-menu">
     <div class="hq-folder">
-        <h1>HEARTS OF IRON V<br><span class="subtitle-main">REMASTERED</span></h1>
+        <h1>HEIRLOOM<br><span class="subtitle-main">STRATEGY</span></h1>
         <p class="subtitle">Grand Strategy Command</p>
         <button id="btn-play" class="hq-button">🗺️ НАЧАТЬ ИГРУ</button>
-        <p class="version-text">Oberkommando — Simulation Module v3.0 (WebGL)</p>
+        <button id="btn-settings" class="hq-button" style="background:#374151;">⚙️ НАСТРОЙКИ</button>
+        <a href="https://t.me/studion2025" target="_blank" style="color:#eab308;text-decoration:none;font-size:12px;margin-top:8px;display:block;opacity:0.8;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">📱 Telegram канал</a>
+        <p class="version-text">Oberkommando — Simulation Module v4.0 (WebGL)</p>
+    </div>
+</div>
+
+    <div id="settings-overlay" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1100;display:flex;align-items:center;justify-content:center;">
+    <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;padding:24px;max-width:420px;width:90%;">
+        <h2 style="color:#eab308;text-align:center;margin-bottom:16px;">⚙️ НАСТРОЙКИ</h2>
+
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">🌐 Язык / Language</label>
+            <div style="display:flex;gap:6px;">
+                <button id="set-lang-ru" onclick="window.setGameLang('ru')" style="flex:1;padding:8px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">🇷🇺 Русский</button>
+                <button id="set-lang-en" onclick="window.setGameLang('en')" style="flex:1;padding:8px;background:#374151;color:white;border:1px solid #4b5563;border-radius:6px;cursor:pointer;">🇬🇧 English</button>
+            </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">💾 Автосохранение</label>
+            <div style="display:flex;gap:6px;">
+                <button id="set-autosave-on" onclick="window.setGameAutosave(true)" style="flex:1;padding:8px;background:#15803d;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">ВКЛ</button>
+                <button id="set-autosave-off" onclick="window.setGameAutosave(false)" style="flex:1;padding:8px;background:#374151;color:white;border:1px solid #4b5563;border-radius:6px;cursor:pointer;">ВЫКЛ</button>
+            </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">🎓 Туториал</label>
+            <button onclick="localStorage.removeItem('heirloom_tutorial_done');location.reload()" style="width:100%;padding:8px;background:#854d0e;color:white;border:none;border-radius:6px;cursor:pointer;">🔄 Показать снова при запуске</button>
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">🔊 Звуковые эффекты</label>
+            <div style="display:flex;gap:6px;">
+                <button id="set-sound-on" onclick="window.setGameSound(true)" style="flex:1;padding:8px;background:#15803d;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">ВКЛ</button>
+                <button id="set-sound-off" onclick="window.setGameSound(false)" style="flex:1;padding:8px;background:#374151;color:white;border:1px solid #4b5563;border-radius:6px;cursor:pointer;">ВЫКЛ</button>
+            </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px;color:#9ca3af;display:block;margin-bottom:4px;">📐 Масштаб интерфейса</label>
+            <div style="display:flex;gap:6px;">
+                <button onclick="window.setGameUIScale(0.8)" style="flex:1;padding:6px;background:#374151;color:white;border:1px solid #4b5563;border-radius:6px;cursor:pointer;font-size:11px;">Маленький</button>
+                <button onclick="window.setGameUIScale(1.0)" style="flex:1;padding:6px;background:#374151;color:white;border:1px solid #4b5563;border-radius:6px;cursor:pointer;font-size:11px;">Стандарт</button>
+                <button onclick="window.setGameUIScale(1.2)" style="flex:1;padding:6px;background:#374151;color:white;border:1px solid #4b5563;border-radius:6px;cursor:pointer;font-size:11px;">Большой</button>
+            </div>
+        </div>
+
+        <button onclick="document.getElementById('settings-overlay').classList.add('hidden')" style="width:100%;padding:10px;background:#15803d;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:13px;margin-top:8px;">✓ ГОТОВО</button>
     </div>
 </div>
 
@@ -41,10 +89,12 @@
         <span id="order-hint" class="hidden indicator indicator-green">🚶 ВЫБЕРИТЕ ЦЕЛЬ</span>
         <span id="build-hint" class="hidden indicator indicator-blue">📍 ВЫБЕРИТЕ МЕСТО</span>
         <div class="speed-controls">
+            <button id="btn-lang" class="speed-btn" title="Сменить язык / Switch language">🇷🇺</button>
             <button class="speed-btn" data-speed="0">⏸</button>
             <button class="speed-btn active" data-speed="1">▶ 1x</button>
             <button class="speed-btn" data-speed="3">▶▶ 3x</button>
             <button class="speed-btn" data-speed="5">▶▶▶ 5x</button>
+            <button id="btn-fullscreen" class="speed-btn" title="Полноэкранный режим">⛶</button>
         </div>
         <span id="game-date" class="date-display">1 ЯНВ 1936</span>
     </div>
@@ -55,7 +105,6 @@
         <button class="tab-btn" data-tab="focus">⭐ ФОКУСЫ</button>
         <button class="tab-btn" data-tab="diplomacy">🤝 ДИПЛОМАТИЯ</button>
         <button class="tab-btn" data-tab="build">🏗️ СТРОЙКА</button>
-        <button class="tab-btn" data-tab="commanders">🎖️ АРМИИ</button>
         <button class="tab-btn" data-tab="save">💾 СОХРАНИТЬ</button>
     </div>
 
@@ -77,6 +126,10 @@
         <div class="sidebar-content">
             <div class="sidebar-row"><span class="sidebar-label">👑 Лидер:</span><span id="sidebar-leader" class="sidebar-value">—</span></div>
             <div class="sidebar-row"><span class="sidebar-label">⚡ Идеология:</span><span id="sidebar-ideology" class="sidebar-value">—</span></div>
+            <div class="sidebar-row" id="sidebar-overlord-row" style="display:none;"><span class="sidebar-label">👑 Государство:</span><span id="sidebar-overlord" class="sidebar-value" style="color:#c084fc;">—</span></div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-row"><span class="sidebar-label">🏙️ Столица:</span><span id="sidebar-capital" class="sidebar-value">—</span></div>
+            <div class="sidebar-row" id="sidebar-relation-row" style="display:none;"><span class="sidebar-label">💛 Отношение:</span><span id="sidebar-relation" class="sidebar-value">—</span></div>
             <div class="sidebar-divider"></div>
             <div class="sidebar-row"><span class="sidebar-label">👥 Население:</span><span id="sidebar-pop" class="sidebar-value value-green">—</span></div>
             <div class="sidebar-row"><span class="sidebar-label">🏭 Заводы:</span><span id="sidebar-factories" class="sidebar-value value-blue">—</span></div>
@@ -87,9 +140,33 @@
     </div>
 
     <div id="hint" class="hidden">💡 <span id="hint-text"></span></div>
+    <div id="army-command-panel" class="hidden" style="position:fixed;z-index:300;background:#1f2937;border:2px solid #eab308;border-radius:8px;padding:8px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.5);pointer-events:auto;"></div>
     <div id="notifications"></div>
+
+    <!-- Тутор -->
+    <div id="tutorial-overlay" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:500;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.5);">
+            <div id="tutorial-icon" style="text-align:center;font-size:48px;margin-bottom:12px;">🎮</div>
+            <div id="tutorial-title" style="text-align:center;font-size:18px;font-weight:bold;color:#eab308;margin-bottom:8px;">Добро пожаловать в Heirloom!</div>
+            <div id="tutorial-text" style="text-align:center;font-size:13px;color:#d1d5db;line-height:1.6;margin-bottom:16px;"></div>
+            <div style="text-align:center;margin-bottom:8px;font-size:10px;color:#6b7280;" id="tutorial-step">Шаг 1 / 8</div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+                <button id="tutorial-skip" style="padding:8px 16px;background:#374151;color:#9ca3af;border:1px solid #4b5563;border-radius:6px;cursor:pointer;font-size:12px;">Пропустить</button>
+                <button id="tutorial-next" style="padding:8px 24px;background:#15803d;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold;">Далее →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Панель армий внизу (как в стратегиях) -->
+    <div id="army-panel">
+        <div id="army-panel-header">
+            <span id="army-count">0 армий</span>
+            <button id="btn-create-army" title="Создать армию из выделенных">➕</button>
+        </div>
+        <div id="army-cards"></div>
+    </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+    <script type="module" src="js/main.js?v=38.0"></script>
 </body>
 </html>

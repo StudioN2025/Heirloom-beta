@@ -7,7 +7,7 @@ export class MovementSystem {
         this.world    = world;
         this.entities = entities;
         this.gs       = gameState;
-        this.orders   = new Map(); // unitId → { path, targetX, targetY }
+        this.orders   = new Map();
     }
 
     _areAllied(c1, c2) {
@@ -16,7 +16,6 @@ export class MovementSystem {
         return this.gs.alliances.some(a => a.has && a.has(c1) && a.has(c2));
     }
 
-    // Выдать приказ на движение
     giveOrder(unitId, targetX, targetY) {
         const e = this.entities;
         if (!e.active[unitId]) return false;
@@ -24,18 +23,53 @@ export class MovementSystem {
             addNotification('Юнит в бою!', 'war');
             return false;
         }
+        if (e.training && e.training[unitId] > 0) {
+            addNotification('Юнит ещё обучается!', 'war');
+            return false;
+        }
 
         const sx = e.x[unitId], sy = e.y[unitId];
         if (sx === targetX && sy === targetY) return false;
 
-        const path = this._findPath(sx, sy, targetX, targetY, e.owner[unitId]);
+        const startPort = this.world.hasBuilding(sx, sy, 'port');
+        const targetIsWater = this.world.isWater(targetX, targetY);
+        const targetIsLand = this.world.getCell(targetX, targetY) !== 0;
+        const targetOwner = this.world.getCell(targetX, targetY);
+        const sameOwner = targetOwner === e.owner[unitId]
+            || this._areAllied(e.owner[unitId], targetOwner);
+
+        const endPort = this.world.hasBuilding(targetX, targetY, 'port');
+        if (startPort && endPort && sameOwner) {
+            e.moveTo(unitId, targetX, targetY);
+            e.isShip[unitId] = 0;
+            this.orders.delete(unitId);
+            addNotification('🚢 Морская переброска!', 'info');
+            return true;
+        }
+
+        const dx = Math.abs(targetX - sx);
+        const dy = Math.abs(targetY - sy);
+        if (dx + dy === 1) {
+            let targetOk = targetIsLand;
+            if (targetIsWater && (e.isShip[unitId] || startPort)) targetOk = true;
+            if (targetOk) {
+                e.moveTo(unitId, targetX, targetY);
+                if (targetIsLand) e.isShip[unitId] = 0;
+                else if (targetIsWater && startPort) e.isShip[unitId] = 1;
+                return true;
+            }
+        }
+
+        const isShip = e.isShip[unitId];
+        const allowWater = isShip === 1 || (targetIsWater && startPort);
+
+        const path = this._findPath(sx, sy, targetX, targetY, e.owner[unitId], allowWater);
         if (!path || path.length === 0) {
             addNotification('Путь не найден!', 'war');
             return false;
         }
 
         this.orders.set(unitId, { path, targetX, targetY });
-        addNotification(`Приказ выдан — ${path.length} клеток`, 'info');
         return true;
     }
 
@@ -46,7 +80,6 @@ export class MovementSystem {
     hasOrder(unitId) { return this.orders.has(unitId); }
     cancelOrder(unitId) { this.orders.delete(unitId); }
 
-    // Вызывается раз в игровой день из main.js
     update() {
         this._moveUnits();
     }
@@ -59,67 +92,100 @@ export class MovementSystem {
             if (e.inCombat[unitId]) continue;
             if (!order.path.length) { this.orders.delete(unitId); continue; }
 
-            // Двигаем 2 клетки за день
+            const hasPort = this.world.hasBuilding(e.x[unitId], e.y[unitId], 'port');
+            const isShip = e.isShip[unitId];
+
             for (let step = 0; step < 2; step++) {
                 if (!order.path.length) { this.orders.delete(unitId); break; }
 
                 const next = order.path[0];
                 const [nx, ny] = next.split(',').map(Number);
 
-                // Проверяем — вода?
-                if (this.world.getCell(nx, ny) === 0) {
-                    this.orders.delete(unitId);
-                    addNotification('Путь заблокирован водой!', 'war');
-                    break;
+                const isWater = this.world.isWater(nx, ny);
+                const cellOwner = this.world.getCell(nx, ny);
+                const isLand = cellOwner !== 0;
+
+                if (!e.isShip[unitId] && isWater && hasPort) {
+                    e.isShip[unitId] = 1;
                 }
 
-                // Проверяем — вражеская территория? Если да, начать бой
-                const cellOwner = e.owner[unitId] ? this.world.getCell(nx, ny) : 0;
-                if (cellOwner !== 0 && cellOwner !== e.owner[unitId]
-                    && !this._areAllied(e.owner[unitId], cellOwner)) {
-                    // Вражеская клетка — атакуем если есть враг, иначе захватываем
-                    const enemy = e.getUnitAt(nx, ny);
-                    if (enemy && e.active[enemy] && e.owner[enemy] !== e.owner[unitId]) {
-                        addNotification('⚔️ Встреча с врагом!', 'war');
-                        this.orders.delete(unitId);
+                if (e.isShip[unitId]) {
+                    if (isWater) {
+                        // ok
+                    } else if (isLand) {
+                        const isFriendly = cellOwner === e.owner[unitId] || this._areAllied(e.owner[unitId], cellOwner);
+                        const isEnemy = cellOwner !== 0 && cellOwner !== e.owner[unitId] && !isFriendly;
+                        const hasPort2 = this.world.hasBuilding(nx, ny, 'port');
+
+                        if (isFriendly || hasPort2) {
+                            e.moveTo(unitId, nx, ny);
+                            e.isShip[unitId] = 0;
+                            order.path.shift();
+                            continue;
+                        } else if (isEnemy) {
+                            const enemy = e.getUnitAt(nx, ny);
+                            if (enemy && e.active[enemy]) {
+                                this.orders.delete(unitId);
+                                break;
+                            }
+                            e.moveTo(unitId, nx, ny);
+                            e.isShip[unitId] = 0;
+                            this.world.setCell(nx, ny, e.owner[unitId]);
+                            order.path.shift();
+                            addNotification('⚓ Десант!', 'info');
+                            continue;
+                        } else {
+                            break;
+                        }
+                    } else {
                         break;
                     }
-                    // Захватываем пустую вражескую клетку
+                }
+
+                // Занята другим юнитом? Проверяем ДО захвата клетки
+                const occupant = e.getUnitAt(nx, ny);
+                if (occupant && occupant !== unitId) {
+                    const occOwner = e.owner[occupant];
+                    const myOwner = e.owner[unitId];
+                    if (occOwner !== myOwner && !this._areAllied(myOwner, occOwner)) {
+                        if (!e.inCombat[unitId] && !e.inCombat[occupant]) {
+                            e.moveTo(unitId, nx, ny);
+                            order.path.shift();
+                        }
+                        break;
+                    }
+                }
+
+                // Захват вражеской клетки — только если на ней нет чужого юнита
+                if (!e.isShip[unitId] && isLand && cellOwner !== 0
+                    && cellOwner !== e.owner[unitId]
+                    && !this._areAllied(e.owner[unitId], cellOwner)) {
                     this.world.setCell(nx, ny, e.owner[unitId]);
                 }
 
-                // Проверяем — занята другим юнитом? Ждём
-                const occupant = e.getUnitAt(nx, ny);
-                if (occupant && occupant !== unitId) {
-                    // Юнит на пути — ждём следующий день, не удаляем приказ
-                    break;
-                }
-
-                // Всё ок — делаем шаг
                 e.moveTo(unitId, nx, ny);
+                if (isLand) e.isShip[unitId] = 0;
                 order.path.shift();
             }
         }
     }
 
-    // A* поиск пути (по суше, через союзников, мимо врагов)
-    _findPath(sx, sy, ex, ey, ownerId) {
-        const MAX = 500;
+    _findPath(sx, sy, ex, ey, ownerId, allowWater = false) {
+        const MAX = 1500;
         const h = (x, y) => Math.abs(x - ex) + Math.abs(y - ey);
 
         const open = [{ x: sx, y: sy, g: 0, f: h(sx, sy) }];
         const cameFrom = new Map();
         const best = new Map();
-        const key = (x, y) => `${x},${y}`;
-        best.set(key(sx, sy), 0);
+        const k = (x, y) => `${x},${y}`;
+        best.set(k(sx, sy), 0);
         let steps = 0;
 
         while (open.length && steps++ < MAX) {
-            // pop min-f
             let mi = 0;
             for (let i = 1; i < open.length; i++) if (open[i].f < open[mi].f) mi = i;
             const cur = open.splice(mi, 1)[0];
-            const ck = key(cur.x, cur.y);
+            const ck = k(cur.x, cur.y);
 
             if (cur.x === ex && cur.y === ey) {
                 const path = [];
@@ -130,23 +196,27 @@ export class MovementSystem {
 
             for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
                 const nx = cur.x + dx, ny = cur.y + dy;
-                const nk = key(nx, ny);
+                const nk = k(nx, ny);
                 const cellOwner = this.world.getCell(nx, ny);
+                const isWater = this.world.isWater(nx, ny);
 
-                // Вода — нельзя
-                if (cellOwner === 0) continue;
+                if (!allowWater) {
+                    if (isWater) continue;
+                    if (cellOwner === 0 && !isWater) continue;
 
-                // Вражеская территория — только если цель на ней, иначе обходим
-                const isEnemy = cellOwner !== ownerId && cellOwner !== 0
-                    && !this._areAllied(ownerId, cellOwner);
-                if (isEnemy && !(nx === ex && ny === ey)) continue;
+                    if (cellOwner !== 0 && cellOwner !== ownerId) {
+                        const isAllied = this._areAllied(ownerId, cellOwner);
+                        const isAtWar = this.gs && this.gs.isAtWar && this.gs.isAtWar(ownerId, cellOwner);
+                        if (!isAllied && !isAtWar) continue;
+                    }
+                }
 
-                // Вражеский юнит на клетке — нельзя проходить
-                const occupant = this.entities.getUnitAt(nx, ny);
-                if (occupant && this.entities.active[occupant]
-                    && this.entities.owner[occupant] !== ownerId
-                    && !this._areAllied(ownerId, this.entities.owner[occupant])) {
-                    continue;
+                if (allowWater) {
+                    if (isWater) {
+                        // ok
+                    } else {
+                        continue;
+                    }
                 }
 
                 const ng = cur.g + 1;

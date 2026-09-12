@@ -11,12 +11,32 @@ export class DiplomacySystem {
     
     declareWar(targetId) {
         const myId = this.gameState.myCountryId;
-        
+
         if (this.gameState.isAtWar(myId, targetId)) {
             addNotification('Уже в состоянии войны!', 'war');
             return false;
         }
-        
+
+        // Проверка идеологии
+        const cData = window._COUNTRIES_MAP && window._COUNTRIES_MAP[myId];
+        const ideology = cData ? cData.ideology : 'Нейтралитет';
+
+        if (ideology === 'Нейтралитет') {
+            addNotification('🚫 Нейтралы не могут объявлять войну! Только через призыв союзника.', 'war');
+            return false;
+        }
+
+        if (ideology === 'Демократия') {
+            // Демократы нуждаются в обосновании
+            const justification = this.gameState.justifications;
+            if (!justification || justification.target !== targetId || justification.daysLeft > 0) {
+                addNotification('🚫 Демократия требует обоснование войны! Начните обоснование в дипломатии.', 'war');
+                return false;
+            }
+        }
+
+        // Фашизм и коммунизм — без ограничений
+
         const newAlliances = [];
         for (const alliance of this.gameState.alliances) {
             if (alliance.has(myId) && alliance.has(targetId)) {
@@ -26,10 +46,52 @@ export class DiplomacySystem {
             newAlliances.push(alliance);
         }
         this.gameState.alliances = newAlliances;
-        
-        this.gameState.addWar(myId, targetId);
+
+        this.gameState.addWar(myId, targetId, this.world);
+        this.gameState.justifications = null;
         addNotification(`⚔️ ${myId} объявляет войну ${targetId}!`, 'war');
-        
+
+        return true;
+    }
+
+    // Обоснование войны (для демократий)
+    startJustification(targetId) {
+        const myId = this.gameState.myCountryId;
+        const cData = window._COUNTRIES_MAP && window._COUNTRIES_MAP[myId];
+        const ideology = cData ? cData.ideology : 'Нейтралитет';
+        if (ideology !== 'Демократия') {
+            addNotification('Обоснование не требуется для вашей идеологии', 'info');
+            return false;
+        }
+        if (this.gameState.isAtWar(myId, targetId)) {
+            addNotification('Уже в войне!', 'war');
+            return false;
+        }
+        this.gameState.justifications = { target: targetId, daysLeft: 30, totalDays: 30 };
+        addNotification('📜 Начато обоснование войны против ' + targetId.toUpperCase() + ' (30 дней)', 'info');
+        return true;
+    }
+
+    // Призыв к оружию — обходит ограничения идеологии
+    declareWarForced(targetId) {
+        const myId = this.gameState.myCountryId;
+
+        if (this.gameState.isAtWar(myId, targetId)) {
+            addNotification('Уже в состоянии войны!', 'war');
+            return false;
+        }
+
+        const newAlliances = [];
+        for (const alliance of this.gameState.alliances) {
+            if (alliance.has(myId) && alliance.has(targetId)) {
+                continue;
+            }
+            newAlliances.push(alliance);
+        }
+        this.gameState.alliances = newAlliances;
+
+        this.gameState.addWar(myId, targetId, this.world);
+        addNotification(`⚔️ ${myId} вступает в войну (призыв союзника)!`, 'war');
         return true;
     }
     
@@ -86,7 +148,7 @@ export class DiplomacySystem {
         
         for (const enemy of myEnemies) {
             if (!this.gameState.isAtWar(allyId, enemy)) {
-                this.gameState.addWar(allyId, enemy);
+                this.gameState.addWar(allyId, enemy, this.world);
             }
         }
         

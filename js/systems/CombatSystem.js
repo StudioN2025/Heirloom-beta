@@ -1,49 +1,44 @@
-// CombatSystem.js — HOI4-механика боя
-//
-// Ключевые концепции:
-//   - СРАЖЕНИЕ (Battle): группа юнитов с обеих сторон атакует/обороняет одну клетку
-//   - ФРОНТ: ширина = сколько юнитов участвует с каждой стороны (макс. FRONT_WIDTH)
-//   - ОРГАНИЗАЦИЯ: падает при получении урона, при 0 — отступление (как в HOI)
-//   - ПРОРЫВ: если org обороняющегося << org атакующего — bonus прорыва
-//   - ЗАХВАТ: победитель занимает клетку проигравшего
+// CombatSystem.js — Юниты сражаются до конца, организация падает в бою
 
 import { addNotification } from '../utils/helpers.js';
 
-const FRONT_WIDTH = 4; // макс. юнитов с каждой стороны в одном сражении
+const FRONT_WIDTH = 4;
 
 const UNIT_STATS = {
-    0: { // пехота
+    0: {
         softAttack: 30, hardAttack: 5,
         defense: 25, breakthrough: 8,
         hardness: 0,
-        maxOrg: 100, orgRecovery: 4,
-        maxHp: 100,
+        maxOrg: 100, orgRecovery: 3,
+        maxHp: 100, hpPerDay: 1,
     },
-    1: { // танки
+    1: {
         softAttack: 80, hardAttack: 60,
         defense: 15, breakthrough: 40,
         hardness: 70,
-        maxOrg: 60, orgRecovery: 2,
-        maxHp: 50,
+        maxOrg: 80, orgRecovery: 2,
+        maxHp: 100, hpPerDay: 1,
     },
 };
 
 export class CombatSystem {
     constructor(world, entities, gameState) {
-        this.world    = world;
+        this.world = world;
         this.entities = entities;
-        this.gs       = gameState;
-
-        // cellKey → Battle  (сражение за конкретную клетку)
+        this.gs = gameState;
+        this.tech = null;
         this.battles = new Map();
-        // org[unitId]
         this.org = new Float32Array(entities.maxEntities || 50000);
+        this._initialized = new Uint8Array(entities.maxEntities || 50000);
     }
 
     initUnit(uid) {
         const s = UNIT_STATS[this.entities.type[uid]] || UNIT_STATS[0];
         this.org[uid] = s.maxOrg;
+        this._initialized[uid] = 1;
     }
+
+    getOrg(uid) { return Math.round(this.org[uid] || 0); }
 
     update() {
         this._formBattles();
@@ -51,134 +46,166 @@ export class CombatSystem {
         this._recoverOrg();
     }
 
-    getOrg(uid) { return Math.round(this.org[uid] || 0); }
-
-    startCombat() { /* бои формируются автоматически */ }
-
-    // ── 1. Формируем сражения ─────────────────────────────────────────────────
-    // Логика: если юнит стоит на вражеской клетке (или рядом с ней и в состоянии войны),
-    //         создаём Battle за эту клетку.
-
     _formBattles() {
         const e = this.entities;
 
         for (let i = 1; i < e.nextId; i++) {
             if (!e.active[i]) continue;
             const ownerI = e.owner[i];
+            const iIsShip = e.isShip ? e.isShip[i] : 0;
 
-            // Смотрим на соседей
-            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[0,0]]) {
                 const nx = e.x[i] + dx, ny = e.y[i] + dy;
                 const j = e.getUnitAt(nx, ny);
-                if (!j || !e.active[j] || i > j) continue; // i > j чтобы не обрабатывать пару дважды
-                const ownerJ = e.owner[j];
-                if (ownerI === ownerJ) continue;
-                if (!this.gs.isAtWar(ownerI, ownerJ)) continue;
+                if (!j || !e.active[j] || i === j) continue;
+                if (ownerI === e.owner[j]) continue;
+                if (!this.gs.isAtWar(ownerI, e.owner[j])) continue;
 
-                // Простая логика: меньший ID атакует, больший защищается
-                // (или просто первый в паре атакует второго)
-                const attacker = i, defender = j;
-                const battleCell = `${nx},${ny}`;
+                const jIsShip = e.isShip ? e.isShip[j] : 0;
+
+                if (!iIsShip && jIsShip) continue;
+
+                const attacker = i;
+                const defender = j;
+
+                const battleCell = `${e.x[defender]},${e.y[defender]}`;
 
                 if (this.battles.has(battleCell)) {
-                    // Добавляем юнитов в существующее сражение
                     const b = this.battles.get(battleCell);
-                    if (e.owner[attacker] === b.attackerCountry && !b.attackers.includes(attacker)
-                        && b.attackers.length < FRONT_WIDTH) {
+                    if (e.owner[attacker] === b.attackerCountry && !b.attackers.includes(attacker) && b.attackers.length < FRONT_WIDTH) {
                         b.attackers.push(attacker);
                         e.inCombat[attacker] = 1;
                     }
-                    if (e.owner[defender] === b.defenderCountry && !b.defenders.includes(defender)
-                        && b.defenders.length < FRONT_WIDTH) {
+                    if (e.owner[defender] === b.defenderCountry && !b.defenders.includes(defender) && b.defenders.length < FRONT_WIDTH) {
                         b.defenders.push(defender);
                         e.inCombat[defender] = 1;
                     }
                 } else {
-                    // Инициализируем org если нулевая
-                    if (this.org[attacker] === 0) this.initUnit(attacker);
-                    if (this.org[defender] === 0) this.initUnit(defender);
+                    // Гарантируем инициализацию org
+                    if (!this._initialized[attacker]) this.initUnit(attacker);
+                    if (!this._initialized[defender]) this.initUnit(defender);
 
                     e.inCombat[attacker] = 1;
                     e.inCombat[defender] = 1;
 
-                    const b = {
+                    this.battles.set(battleCell, {
                         attackerCountry: e.owner[attacker],
                         defenderCountry: e.owner[defender],
                         attackers: [attacker],
                         defenders: [defender],
                         cell: battleCell,
                         day: 0,
-                        notified: false,
-                    };
-                    this.battles.set(battleCell, b);
+                    });
 
                     const my = this.gs.myCountryId;
                     if (e.owner[attacker] === my || e.owner[defender] === my) {
-                        addNotification(`⚔️ Бой: ${b.attackerCountry} атакует ${b.defenderCountry}!`, 'war');
+                        const t = e.isShip && e.isShip[attacker] ? '🚢' : '⚔️';
+                        addNotification(`${t} Бой: ${e.owner[attacker]} атакует ${e.owner[defender]}!`, 'war');
+                    }
+
+                    if (this.world.capitals) {
+                        for (const [cid, cap] of Object.entries(this.world.capitals)) {
+                            if (cap.x === e.x[defender] && cap.y === e.y[defender]) {
+                                addNotification(`🔥 Бой за столицу ${cap.name}!`, 'war');
+                                break;
+                            }
+                        }
                     }
                 }
             }
         }
+        this._sendReinforcements();
     }
 
-    // ── 2. Разрешаем сражения ─────────────────────────────────────────────────
+    _sendReinforcements() {
+        const e = this.entities;
+        for (const [, b] of this.battles) {
+            if (b.attackers.length >= FRONT_WIDTH && b.defenders.length >= FRONT_WIDTH) continue;
+            const [cx, cy] = b.cell.split(',').map(Number);
+            const nearby = e.getEntitiesInRadius(cx, cy, 2);
+            for (const uid of nearby) {
+                if (!e.active[uid] || e.inCombat[uid]) continue;
+                if (b.attackers.length < FRONT_WIDTH && e.owner[uid] === b.attackerCountry && !b.attackers.includes(uid)) {
+                    if (!this._initialized[uid]) this.initUnit(uid);
+                    b.attackers.push(uid);
+                    e.inCombat[uid] = 1;
+                } else if (b.defenders.length < FRONT_WIDTH && e.owner[uid] === b.defenderCountry && !b.defenders.includes(uid)) {
+                    if (!this._initialized[uid]) this.initUnit(uid);
+                    b.defenders.push(uid);
+                    e.inCombat[uid] = 1;
+                }
+            }
+        }
+    }
 
     _resolveBattles() {
         const e = this.entities;
         const toDelete = [];
 
         for (const [cellKey, b] of this.battles) {
-            // Чистим мёртвых
             b.attackers = b.attackers.filter(id => e.active[id]);
             b.defenders = b.defenders.filter(id => e.active[id]);
-
-            if (!b.attackers.length || !b.defenders.length) {
-                this._endBattle(b);
-                toDelete.push(cellKey);
-                continue;
-            }
+            if (!b.attackers.length || !b.defenders.length) { this._endBattle(b); toDelete.push(cellKey); continue; }
 
             b.day++;
-            // Бой идёт каждые 2 дня
-            if (b.day % 2 !== 0) continue;
+            const [bx, by] = cellKey.split(',').map(Number);
+            const terrainBonus = this.world.getTerrainBonus ? this.world.getTerrainBonus(bx, by) : 1.0;
 
-            // Суммарные атаки сторон
-            const aAttack = this._totalAttack(b.attackers, b.defenders);
-            const dAttack = this._totalAttack(b.defenders, b.attackers);
-
-            // Суммарная org сторон
             const aOrgAvg = this._avgOrg(b.attackers);
             const dOrgAvg = this._avgOrg(b.defenders);
 
-            // Бонус прорыва: если у атакующего высокая org а у защитника низкая
-            const breakthroughBonus = aOrgAvg > dOrgAvg * 1.5 ? 1.3 : 1.0;
+            const breakthroughBonus = aOrgAvg > dOrgAvg * 1.3 ? 1.25 : 1.0;
 
-            // Множитель численного превосходства (максимум x1.5)
             const numAdvA = Math.min(1.5, 1 + (b.attackers.length - b.defenders.length) * 0.15);
             const numAdvD = Math.min(1.5, 1 + (b.defenders.length - b.attackers.length) * 0.15);
 
-            const rng = () => 0.75 + Math.random() * 0.5;
+            const rng = () => 0.8 + Math.random() * 0.4;
+            const aPenalty = this._getCapitulationPenalty(b.attackerCountry);
+            const dPenalty = this._getCapitulationPenalty(b.defenderCountry);
 
-            // Наносим org урон каждому юниту с вражеской стороны
-            const aOrgDmg = (aAttack / b.defenders.length) * breakthroughBonus * numAdvA;
-            const dOrgDmg = (dAttack / b.attackers.length) * numAdvD;
+            let capitalBonus = 1.0;
+            if (this.world.capitals) {
+                const [bx2, by2] = b.cell.split(',').map(Number);
+                for (const [cid, cap] of Object.entries(this.world.capitals)) {
+                    if (cap.x === bx2 && cap.y === by2 && cid === b.defenderCountry) {
+                        capitalBonus = 1.4;
+                        break;
+                    }
+                    if (cap.x === bx2 && cap.y === by2 && cid === b.attackerCountry) {
+                        capitalBonus = 0.85;
+                        break;
+                    }
+                }
+            }
+
+            const aRawAttack = this._totalAttack(b.attackers, b.defenders, b.cell);
+            const avgDefDefense = this._avgStat(b.defenders, 'defense');
+            let defTechMult = 1.0;
+            if (this.tech) defTechMult += this.tech.getEffect(b.defenderCountry, 'infantryDefense');
 
             for (const uid of b.defenders) {
-                this.org[uid] = Math.max(0, this.org[uid] - aOrgDmg * rng());
-                const died = e.damage(uid, Math.ceil(aOrgDmg * 0.1 * rng()));
-                if (died && e.owner[uid] === this.gs.myCountryId) {
-                    addNotification(`💀 Юнит уничтожен!`, 'war');
-                }
-            }
-            for (const uid of b.attackers) {
-                this.org[uid] = Math.max(0, this.org[uid] - dOrgDmg * rng());
-                const died = e.damage(uid, Math.ceil(dOrgDmg * 0.08 * rng()));
-                if (died && e.owner[uid] === this.gs.myCountryId) {
-                    addNotification(`💀 Юнит уничтожен!`, 'war');
-                }
+                const reduction = avgDefDefense * terrainBonus * 0.12 * defTechMult * capitalBonus;
+                const baseDmg = (aRawAttack / b.defenders.length) * breakthroughBonus * numAdvA * aPenalty;
+                const netDmg = Math.max(1, baseDmg - reduction) * rng();
+                this.org[uid] = Math.max(0, this.org[uid] - netDmg);
+                const hpDmg = Math.max(1, Math.ceil(netDmg * 0.15 * rng()));
+                e.damage(uid, hpDmg);
             }
 
-            // Перечищаем мёртвых после урона
+            const dRawAttack = this._totalAttack(b.defenders, b.attackers, b.cell) * capitalBonus;
+            const avgAtkBreakthrough = this._avgStat(b.attackers, 'breakthrough');
+            let atkTechMult = 1.0;
+            if (this.tech) atkTechMult += this.tech.getEffect(b.attackerCountry, 'infantryAttack');
+
+            for (const uid of b.attackers) {
+                const reduction = avgAtkBreakthrough * 0.1 * atkTechMult;
+                const baseDmg = (dRawAttack / b.attackers.length) * numAdvD * dPenalty;
+                const netDmg = Math.max(1, baseDmg - reduction) * rng();
+                this.org[uid] = Math.max(0, this.org[uid] - netDmg);
+                const hpDmg = Math.max(1, Math.ceil(netDmg * 0.12 * rng()));
+                e.damage(uid, hpDmg);
+            }
+
             b.attackers = b.attackers.filter(id => e.active[id]);
             b.defenders = b.defenders.filter(id => e.active[id]);
 
@@ -188,61 +215,61 @@ export class CombatSystem {
                 continue;
             }
 
-            // Проверяем org
-            const newAOrgAvg = this._avgOrg(b.attackers);
-            const newDOrgAvg = this._avgOrg(b.defenders);
+            const newAOrg = this._avgOrg(b.attackers);
+            const newDOrg = this._avgOrg(b.defenders);
 
-            if (newDOrgAvg <= 0 && newAOrgAvg > 0) {
-                // Защитники разбиты — атакующие занимают клетку
+            if (newDOrg <= 0 && newAOrg > 0) {
                 this._defenderRouted(b, cellKey);
                 toDelete.push(cellKey);
-            } else if (newAOrgAvg <= 0 && newDOrgAvg > 0) {
-                // Атакующие разбиты — отступают
+            } else if (newAOrg <= 0 && newDOrg > 0) {
                 this._attackerRouted(b);
                 toDelete.push(cellKey);
-            } else if (newAOrgAvg <= 0 && newDOrgAvg <= 0) {
-                // Оба разбиты — все отступают
-                for (const uid of [...b.attackers, ...b.defenders]) this._retreatUnit(uid);
+            } else if (newAOrg <= 0 && newDOrg <= 0) {
+                for (const uid of [...b.attackers, ...b.defenders]) {
+                    if (e.active[uid]) e.removeEntity(uid);
+                }
                 this._endBattle(b);
                 toDelete.push(cellKey);
             }
         }
-
         for (const k of toDelete) this.battles.delete(k);
     }
-
-    // ── 3. Восстановление org ─────────────────────────────────────────────────
 
     _recoverOrg() {
         const e = this.entities;
         for (let i = 1; i < e.nextId; i++) {
             if (!e.active[i] || e.inCombat[i]) continue;
             const s = UNIT_STATS[e.type[i]] || UNIT_STATS[0];
+            if (!this._initialized[i]) this.initUnit(i);
             if (this.org[i] < s.maxOrg) {
                 this.org[i] = Math.min(s.maxOrg, (this.org[i] || s.maxOrg) + s.orgRecovery);
-            } else if (this.org[i] === 0) {
-                this.org[i] = s.maxOrg; // инициализация нового юнита
+            }
+            if (e.hp[i] < s.maxHp) {
+                e.hp[i] = Math.min(s.maxHp, e.hp[i] + (s.hpPerDay || 1));
             }
         }
     }
 
-    // ── Вспомогательные ──────────────────────────────────────────────────────
-
-    _totalAttack(attackers, defenders) {
+    _totalAttack(attackers, defenders, battleCell) {
         const e = this.entities;
+        const avgHardness = defenders.reduce((s, d) => {
+            const ds = UNIT_STATS[e.type[d]] || UNIT_STATS[0];
+            return s + ds.hardness;
+        }, 0) / (defenders.length || 1);
+
         let total = 0;
         for (const uid of attackers) {
             if (!e.active[uid]) continue;
             const aStats = UNIT_STATS[e.type[uid]] || UNIT_STATS[0];
-            // Смотрим на hardness защитников
-            const avgHardness = defenders.reduce((s, d) => {
-                const ds = UNIT_STATS[e.type[d]] || UNIT_STATS[0];
-                return s + ds.hardness;
-            }, 0) / (defenders.length || 1);
-            const eff = aStats.hardAttack * (avgHardness / 100) + aStats.softAttack * (1 - avgHardness / 100);
-            // Множитель от текущей org
-            const orgMult = Math.max(0.3, (this.org[uid] || 1) / (UNIT_STATS[e.type[uid]].maxOrg));
-            total += eff * orgMult;
+            let techMult = 1.0;
+            if (this.tech) {
+                if (e.type[uid] === 0) techMult += this.tech.getEffect(e.owner[uid], 'infantryAttack');
+                else techMult += this.tech.getEffect(e.owner[uid], 'tankAttack');
+            }
+            const hardnessRatio = avgHardness / 100;
+            const effective = (aStats.softAttack * (1 - hardnessRatio * 0.85) + aStats.hardAttack * hardnessRatio) * techMult;
+            const orgMult = Math.max(0.3, (this.org[uid] || 1) / aStats.maxOrg);
+            total += effective * orgMult;
         }
         return total;
     }
@@ -252,112 +279,46 @@ export class CombatSystem {
         return units.reduce((s, uid) => s + (this.org[uid] || 0), 0) / units.length;
     }
 
+    _avgStat(units, stat) {
+        if (!units.length) return 0;
+        const e = this.entities;
+        return units.reduce((s, uid) => s + ((UNIT_STATS[e.type[uid]] || {})[stat] || 0), 0) / units.length;
+    }
+
+    _getCapitulationPenalty(countryId) {
+        if (!countryId) return 1.0;
+        const size = this.world.getCountryCells(countryId).size;
+        if (size <= 10) return 0.3;
+        if (size <= 20) return 0.6;
+        if (size <= 35) return 0.8;
+        return 1.0;
+    }
+
     _defenderRouted(b, cellKey) {
         const e = this.entities;
         const [cx, cy] = cellKey.split(',').map(Number);
-
-        // Отступаем защитников
-        for (const uid of b.defenders) this._retreatUnit(uid);
-
-        // Захватываем клетку
+        for (const uid of b.defenders) { if (e.active[uid]) e.removeEntity(uid); }
         this.world.setCell(cx, cy, b.attackerCountry);
-
-        // Двигаем первого (лучший org) атакующего на захваченную клетку
         const leader = b.attackers.reduce((best, uid) =>
             (this.org[uid] || 0) > (this.org[best] || 0) ? uid : best, b.attackers[0]);
-        if (e.active[leader] && !e.getUnitAt(cx, cy)) {
-            e.moveTo(leader, cx, cy);
-        }
-
+        if (e.active[leader] && !e.getUnitAt(cx, cy)) e.moveTo(leader, cx, cy);
         this._endBattle(b);
-
-        const my = this.gs.myCountryId;
-        if (b.attackerCountry === my || b.defenderCountry === my) {
-            addNotification(`🏳️ ${b.defenderCountry} отступает! ${b.attackerCountry} занимает клетку.`, 'war');
-        }
-
-        // Проверка капитуляции
-        this._checkCapitulation(b.defenderCountry, b.attackerCountry);
+        if (b.attackerCountry === this.gs.myCountryId || b.defenderCountry === this.gs.myCountryId)
+            addNotification(`💀 ${b.defenderCountry} уничтожен! ${b.attackerCountry} захватывает.`, 'war');
     }
 
     _attackerRouted(b) {
-        for (const uid of b.attackers) this._retreatUnit(uid);
-        this._endBattle(b);
-
-        const my = this.gs.myCountryId;
-        if (b.attackerCountry === my || b.defenderCountry === my) {
-            addNotification(`🏳️ ${b.attackerCountry} отступает!`, 'war');
-        }
-    }
-
-    _retreatUnit(uid) {
         const e = this.entities;
-        if (!e.active[uid]) return;
-        e.inCombat[uid] = 0;
-        const s = UNIT_STATS[e.type[uid]] || UNIT_STATS[0];
-        this.org[uid] = s.maxOrg * 0.15; // после отступления org 15%
-
-        const ownerId = e.owner[uid];
-        const ux = e.x[uid], uy = e.y[uid];
-
-        // BFS — ближайшая своя свободная клетка
-        const queue = [[ux, uy, 0]];
-        const visited = new Set([`${ux},${uy}`]);
-        let retreated = false;
-
-        while (queue.length) {
-            const [x, y, d] = queue.shift();
-            if (d > 0 && this.world.getCell(x, y) === ownerId && !e.getUnitAt(x, y)) {
-                e.moveTo(uid, x, y);
-                retreated = true;
-                break;
-            }
-            if (d >= 4) continue;
-            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-                const k = `${x+dx},${y+dy}`;
-                if (!visited.has(k)) {
-                    visited.add(k);
-                    queue.push([x+dx, y+dy, d+1]);
-                }
-            }
-        }
-
-        if (!retreated) {
-            // Окружён — гибнет
-            e.removeEntity(uid);
-            addNotification(`💀 Юнит ${ownerId} окружён и уничтожен!`, 'war');
-        }
+        for (const uid of b.attackers) { if (e.active[uid]) e.removeEntity(uid); }
+        this._endBattle(b);
+        if (b.attackerCountry === this.gs.myCountryId || b.defenderCountry === this.gs.myCountryId)
+            addNotification(`💀 Атака ${b.attackerCountry} провалилась!`, 'war');
     }
 
     _endBattle(b) {
         const e = this.entities;
         for (const uid of [...b.attackers, ...b.defenders]) {
             if (e.active[uid]) e.inCombat[uid] = 0;
-        }
-    }
-
-    _checkCapitulation(loserCountry, winnerCountry) {
-        const cells = this.world.getCountryCells(loserCountry);
-        if (cells.size > 5) return;
-
-        for (const c of [...cells]) {
-            const [x, y] = c.split(',').map(Number);
-            this.world.setCell(x, y, winnerCountry);
-        }
-        for (const uid of this.entities.getEntitiesByOwner(loserCountry)) {
-            this.entities.removeEntity(uid);
-        }
-        this.gs.wars = this.gs.wars.filter(w => w.a !== loserCountry && w.b !== loserCountry);
-        this.gs.alliances = (this.gs.alliances || [])
-            .map(a => { const s = new Set(a); s.delete(loserCountry); return s; })
-            .filter(a => a.size > 1);
-
-        addNotification(`💀 ${loserCountry} капитулировал перед ${winnerCountry}!`, 'war');
-
-        if (loserCountry === this.gs.myCountryId) {
-            addNotification('💀 Ваша страна капитулировала! Игра окончена.', 'war');
-            this.gs.setGameSpeed(0);
-            this.gs.isGameActive = false;
         }
     }
 }

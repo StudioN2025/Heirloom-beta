@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heirloom — Редактор фокусов</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; color: white; font-family: 'Segoe UI', monospace; overflow: hidden; height: 100vh; }
+        #toolbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 48px;
+            background: #1f2937; display: flex; gap: 6px; padding: 6px 10px;
+            align-items: center; z-index: 100; border-bottom: 2px solid #eab308;
+        }
+        button { padding: 5px 10px; cursor: pointer; background: #374151; color: white; border: 1px solid #4b5563; border-radius: 4px; font-size: 11px; }
+        button:hover { background: #4b5563; }
+        button.active { background: #2d5a2c; border-color: #8bc34a; }
+        #canvas-wrap { position: fixed; top: 48px; left: 0; right: 250px; bottom: 0; overflow: auto; background: #111; }
+        #focus-canvas { position: relative; min-width: 3000px; min-height: 2000px; }
+        .focus-node {
+            position: absolute; width: 140px; height: 70px;
+            background: #1f2937; border: 2px solid #4b5563; border-radius: 6px;
+            cursor: grab; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; text-align: center; font-size: 10px; transition: box-shadow 0.15s;
+        }
+        .focus-node:hover { box-shadow: 0 0 10px rgba(234,179,8,0.4); }
+        .focus-node.selected { border-color: #eab308; box-shadow: 0 0 12px rgba(234,179,8,0.5); }
+        .focus-node .icon { font-size: 20px; }
+        .focus-node .name { font-weight: bold; margin-top: 2px; font-size: 10px; }
+        .focus-node .desc { font-size: 8px; color: #888; margin-top: 1px; }
+        #side-panel {
+            position: fixed; top: 48px; right: 0; bottom: 0; width: 250px;
+            background: #1f2937; border-left: 1px solid #374151; padding: 12px;
+            overflow-y: auto; z-index: 100;
+        }
+        #side-panel h3 { color: #eab308; font-size: 12px; margin-bottom: 8px; }
+        #side-panel label { font-size: 10px; color: #9ca3af; display: block; margin-top: 8px; }
+        #side-panel input, #side-panel select, #side-panel textarea {
+            width: 100%; padding: 6px; background: #374151; border: 1px solid #4b5563;
+            border-radius: 4px; color: white; font-size: 11px; margin-top: 4px;
+        }
+        #side-panel textarea { height: 60px; resize: vertical; }
+        svg#lines { position: absolute; top: 0; left: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <button id="btn-add" class="active">➕ Добавить фокус</button>
+        <button id="btn-link">🔗 Связать</button>
+        <button id="btn-delete">🗑️ Удалить</button>
+        <span style="color:#9ca3af;font-size:10px;margin-left:8px;">ПКМ — редактировать | Перетаскивание — перемещение</span>
+        <span style="margin-left:auto;"></span>
+        <button id="btn-export" style="background:#15803d;">💾 Экспорт JSON</button>
+        <button id="btn-import" style="background:#2563eb;">📂 Импорт</button>
+        <select id="country-select" style="padding:4px;background:#374151;color:white;border:1px solid #4b5563;border-radius:4px;font-size:11px;">
+            <option value="germany">Германия</option>
+            <option value="france">Франция</option>
+            <option value="ussr">СССР</option>
+            <option value="uk">Великобритания</option>
+            <option value="italy">Италия</option>
+            <option value="poland">Польша</option>
+            <option value="albania">Албания</option>
+        </select>
+    </div>
+
+    <div id="canvas-wrap">
+        <svg id="lines"></svg>
+        <div id="focus-canvas"></div>
+    </div>
+
+    <div id="side-panel">
+        <h3>Настройки фокуса</h3>
+        <div id="node-editor" style="display:none;">
+            <label>Название</label>
+            <input type="text" id="ed-name" placeholder="Название фокуса">
+            <label>Описание</label>
+            <input type="text" id="ed-desc" placeholder="Описание">
+            <label>Иконка (эмодзи)</label>
+            <input type="text" id="ed-icon" placeholder="⚔️" maxlength="2">
+            <label>Ветка</label>
+            <select id="ed-branch">
+                <option value="military">Военная</option>
+                <option value="economy">Экономика</option>
+                <option value="diplomacy">Дипломатия</option>
+                <option value="war">Война</option>
+                <option value="end">Конец</option>
+            </select>
+            <label>Эффект</label>
+            <select id="ed-effect-type">
+                <option value="equipment">Снаряжение</option>
+                <option value="factories">Заводы</option>
+                <option value="infantry">Пехота</option>
+                <option value="tanks">Танки</option>
+                <option value="war">Война</option>
+                <option value="allies">Альянс</option>
+                <option value="annex">Аннексия</option>
+                <option value="manpower">Люди</option>
+                <option value="ports">Порты</option>
+            </select>
+            <label>Значение эффекта</label>
+            <input type="number" id="ed-effect-val" value="1" min="0">
+            <button onclick="saveNodeProps()" style="width:100%;margin-top:12px;background:#15803d;color:white;padding:8px;border-radius:4px;cursor:pointer;">Сохранить</button>
+        </div>
+        <div id="no-selection" style="color:#6b7280;text-align:center;margin-top:40px;font-size:11px;">
+            Выберите фокус для редактирования
+        </div>
+    </div>
+
+    <svg id="lines" style="position:absolute;top:48px;left:0;pointer-events:none;z-index:50;"></svg>
+
+    <script>
+        // ========== ДАННЫЕ ==========
+        let nodes = [];
+        let links = [];
+        let selectedNode = null;
+        let mode = 'add'; // add, link
+        let linkStart = null;
+        let dragNode = null;
+        let dragOffset = { x: 0, y: 0 };
+        let nextId = 1;
+        let countryId = 'germany';
+
+        const canvas = document.getElementById('focus-canvas');
+        const linesSvg = document.getElementById('lines');
+        const wrap = document.getElementById('canvas-wrap');
+
+        // ========== ДОБАВЛЕНИЕ НОДЫ ==========
+        canvas.addEventListener('dblclick', (e) => {
+            if (mode !== 'add') return;
+            const rect = wrap.getBoundingClientRect();
+            const x = e.clientX - rect.left + wrap.scrollLeft;
+            const y = e.clientY - rect.top + wrap.scrollTop;
+
+            const node = {
+                id: nextId++,
+                x: Math.max(0, x - 70),
+                y: Math.max(0, y - 35),
+                name: 'Новый фокус',
+                desc: 'Описание',
+                icon: '⭐',
+                branch: 'military',
+                effectType: 'equipment',
+                effectVal: 0,
+                prereqs: []
+            };
+            nodes.push(node);
+            renderNode(node);
+        });
+
+        function renderNode(n) {
+            const el = document.createElement('div');
+            el.className = 'focus-node';
+            el.id = `node-${n.id}`;
+            el.style.left = n.x + 'px';
+            el.style.top = n.y + 'px';
+            el.innerHTML = `<div class="icon">${n.icon}</div><div class="name">${n.name}</div><div class="desc">${n.desc}</div>`;
+
+            // Перетаскивание
+            el.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                if (mode === 'link') {
+                    if (!linkStart) {
+                        linkStart = n;
+                        el.classList.add('selected');
+                        return;
+                    }
+                    if (linkStart.id !== n.id) {
+                        // Добавляем связь
+                        if (!links.find(l => l.from === linkStart.id && l.to === n.id)) {
+                            links.push({ from: linkStart.id, to: n.id });
+                            if (!n.prereqs.includes(linkStart.id)) n.prereqs.push(linkStart.id);
+                            drawLines();
+                        }
+                    }
+                    linkStart = null;
+                    document.querySelectorAll('.focus-node.selected').forEach(el => el.classList.remove('selected'));
+                    return;
+                }
+
+                dragNode = n;
+                dragOffset.x = e.clientX - n.x;
+                dragOffset.y = e.clientY - n.y;
+                el.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+
+            // Редактирование по ПКМ
+            el.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                selectedNode = n;
+                document.querySelectorAll('.focus-node.selected').forEach(el => el.classList.remove('selected'));
+                el.classList.add('selected');
+                showNodeEditor(n);
+            });
+
+            canvas.appendChild(el);
+        }
+
+        function updateNodePos(n) {
+            const el = document.getElementById(`node-${n.id}`);
+            if (el) {
+                el.style.left = n.x + 'px';
+                el.style.top = n.y + 'px';
+                el.querySelector('.name').textContent = n.name;
+                el.querySelector('.desc').textContent = n.desc;
+                el.querySelector('.icon').textContent = n.icon;
+            }
+        }
+
+        // ========== ПЕРЕТАСКИВАНИЕ ==========
+        document.addEventListener('mousemove', (e) => {
+            if (!dragNode) return;
+            const rect = wrap.getBoundingClientRect();
+            dragNode.x = Math.max(0, e.clientX - dragOffset.x);
+            dragNode.y = Math.max(0, e.clientY - dragOffset.y);
+            const el = document.getElementById(`node-${dragNode.id}`);
+            if (el) {
+                el.style.left = dragNode.x + 'px';
+                el.style.top = dragNode.y + 'px';
+            }
+            drawLines();
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (dragNode) {
+                const el = document.getElementById(`node-${dragNode.id}`);
+                if (el) el.style.cursor = 'grab';
+                dragNode = null;
+            }
+        });
+
+        // ========== ЛИНИИ ==========
+        function drawLines() {
+            linesSvg.innerHTML = '';
+            const rect = wrap.getBoundingClientRect();
+            linesSvg.setAttribute('width', wrap.scrollWidth);
+            linesSvg.setAttribute('height', wrap.scrollHeight);
+
+            for (const link of links) {
+                const from = nodes.find(n => n.id === link.from);
+                const to = nodes.find(n => n.id === link.to);
+                if (!from || !to) continue;
+
+                const x1 = from.x + 70, y1 = from.y + 70;
+                const x2 = to.x + 70, y2 = to.y;
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', '#4b5563');
+                line.setAttribute('stroke-width', '2');
+                linesSvg.appendChild(line);
+
+                // Стрелка
+                const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                const dx = x2 - x1, dy = y2 - y1;
+                const len = Math.sqrt(dx*dx + dy*dy);
+                const ux = dx/len, uy = dy/len;
+                arrow.setAttribute('points', `${x2-ux*8-uy*4},${y2-uy*8+ux*4} ${x2-ux*8+uy*4},${y2-uy*8-ux*4} ${x2},${y2}`);
+                arrow.setAttribute('fill', '#6b7280');
+                linesSvg.appendChild(arrow);
+            }
+        }
+
+        // ========== РЕДАКТОР СВОЙСТВ ==========
+        function showNodeEditor(n) {
+            document.getElementById('node-editor').style.display = 'block';
+            document.getElementById('no-selection').style.display = 'none';
+            document.getElementById('ed-name').value = n.name;
+            document.getElementById('ed-desc').value = n.desc;
+            document.getElementById('ed-icon').value = n.icon;
+            document.getElementById('ed-branch').value = n.branch;
+            document.getElementById('ed-effect-type').value = n.effectType;
+            document.getElementById('ed-effect-val').value = n.effectVal;
+        }
+
+        window.saveNodeProps = () => {
+            if (!selectedNode) return;
+            selectedNode.name = document.getElementById('ed-name').value;
+            selectedNode.desc = document.getElementById('ed-desc').value;
+            selectedNode.icon = document.getElementById('ed-icon').value;
+            selectedNode.branch = document.getElementById('ed-branch').value;
+            selectedNode.effectType = document.getElementById('ed-effect-type').value;
+            selectedNode.effectVal = parseInt(document.getElementById('ed-effect-val').value) || 0;
+            updateNodePos(selectedNode);
+        };
+
+        // ========== РЕЖИМЫ ==========
+        document.getElementById('btn-add').onclick = () => { mode = 'add'; setModeBtn(); };
+        document.getElementById('btn-link').onclick = () => { mode = 'link'; linkStart = null; setModeBtn(); };
+        document.getElementById('btn-delete').onclick = () => {
+            if (!selectedNode) return;
+            links = links.filter(l => l.from !== selectedNode.id && l.to !== selectedNode.id);
+            nodes = nodes.filter(n => n.id !== selectedNode.id);
+            const el = document.getElementById(`node-${selectedNode.id}`);
+            if (el) el.remove();
+            selectedNode = null;
+            document.getElementById('node-editor').style.display = 'none';
+            document.getElementById('no-selection').style.display = 'block';
+            drawLines();
+        };
+
+        function setModeBtn() {
+            document.getElementById('btn-add').classList.toggle('active', mode === 'add');
+            document.getElementById('btn-link').classList.toggle('active', mode === 'link');
+        }
+
+        // ========== ЭКСПОРТ / ИМПОРТ ==========
+        document.getElementById('btn-export').onclick = () => {
+            countryId = document.getElementById('country-select').value;
+            const tree = {};
+            for (const n of nodes) {
+                const id = n.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                tree[id] = {
+                    id, name: n.name, desc: n.desc, icon: n.icon,
+                    country: countryId, branch: n.branch, tier: Math.floor(n.y / 82),
+                    x: Math.round(n.x), y: Math.round(n.y),
+                    prereqs: n.prereqs.map(p => {
+                        const pn = nodes.find(nn => nn.id === p);
+                        return pn ? pn.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+                    }).filter(Boolean),
+                    effect: { [n.effectType]: n.effectVal }
+                };
+            }
+            const blob = new Blob([JSON.stringify(tree, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `focus_tree_${countryId}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        document.getElementById('btn-import').onclick = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        nodes = [];
+                        links = [];
+                        canvas.innerHTML = '';
+                        nextId = 1;
+
+                        // Определяем формат: DeepSeek или редактор
+                        let focuses = [];
+                        const firstKey = Object.keys(data)[0];
+                        if (data[firstKey] && data[firstKey].Focuses) {
+                            // DeepSeek формат
+                            focuses = data[firstKey].Focuses;
+                            const country = firstKey.toLowerCase().includes('germany') ? 'germany'
+                                : firstKey.toLowerCase().includes('france') ? 'france'
+                                : firstKey.toLowerCase().includes('ussr') ? 'ussr'
+                                : firstKey.toLowerCase().includes('uk') ? 'uk'
+                                : 'germany';
+                            document.getElementById('country-select').value = country;
+
+                            // Строим маппинг имен
+                            const nameMap = {};
+                            focuses.forEach(f => { nameMap[f.name] = f.name.toLowerCase().replace(/[^a-z0-9]/g, '_'); });
+
+                            focuses.forEach((f, i) => {
+                                const id = nameMap[f.name];
+                                const node = {
+                                    id: nextId++,
+                                    x: f.x !== undefined ? f.x : 50 + i * 160,
+                                    y: f.y !== undefined ? f.y : 50,
+                                    name: f.name, desc: (f.effects || []).slice(0, 2).join(', ') || '',
+                                    icon: '⭐', branch: 'military',
+                                    effectType: 'equipment', effectVal: 0,
+                                    prereqs: []
+                                };
+                                nodes.push(node);
+                                renderNode(node);
+
+                                for (const pre of (f.requirements || [])) {
+                                    const preName = nameMap[pre];
+                                    if (preName) {
+                                        const preNode = nodes.find(n => n.name.toLowerCase().replace(/[^a-z0-9]/g, '_') === preName);
+                                        if (preNode) {
+                                            node.prereqs.push(preNode.id);
+                                            links.push({ from: preNode.id, to: node.id });
+                                        }
+                                    }
+                                }
+                            });
+                        } else {
+                            // Формат редактора
+                            for (const [key, f] of Object.entries(data)) {
+                                if (!f.name) continue;
+                                const node = {
+                                    id: nextId++,
+                                    x: f.x !== undefined ? f.x : 50,
+                                    y: f.y !== undefined ? f.y : 50,
+                                    name: f.name, desc: f.desc || '', icon: f.icon || '⭐',
+                                    branch: f.branch || 'military',
+                                    effectType: Object.keys(f.effect || {})[0] || 'equipment',
+                                    effectVal: Object.values(f.effect || {})[0] || 0,
+                                    prereqs: []
+                                };
+                                nodes.push(node);
+                                renderNode(node);
+
+                                for (const pre of (f.prereqs || [])) {
+                                    const preNode = nodes.find(n => n.name.toLowerCase().replace(/[^a-z0-9]/g, '_') === pre);
+                                    if (preNode) {
+                                        node.prereqs.push(preNode.id);
+                                        links.push({ from: preNode.id, to: node.id });
+                                    }
+                                }
+                            }
+                            document.getElementById('country-select').value = Object.values(data)[0]?.country || 'germany';
+                        }
+
+                        drawLines();
+                    } catch(err) {
+                        alert('Ошибка импорта: ' + err.message);
+                    }
+                };
+                reader.readAsText(e.target.files[0]);
+            };
+            input.click();
+        };
+
+        // ========== ИНИЦИАЛИЗАЦИЯ ==========
+        drawLines();
+    </script>
+</body>
+</html>

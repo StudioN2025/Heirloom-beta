@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>HOI5 Map Editor v4.0 — Полноценный редактор карт</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body { background: #0a0a0a; color: white; font-family: 'Segoe UI', monospace; overflow: hidden; }
+        
+        #toolbar {
+            position: fixed; top: 0; left: 0; right: 0; min-height: 50px;
+            background: #1f2937; display: flex; gap: 6px; padding: 6px 10px;
+            align-items: center; z-index: 100; border-bottom: 2px solid #eab308;
+            flex-wrap: wrap;
+        }
+        
+        button, .tool-btn {
+            padding: 5px 10px; cursor: pointer; background: #374151; color: white;
+            border: 1px solid #4b5563; border-radius: 4px; font-family: inherit;
+            font-size: 11px; transition: all 0.2s; white-space: nowrap;
+        }
+        button:hover { background: #4b5563; transform: translateY(-1px); }
+        button.active { background: #2d5a2c; border-color: #8bc34a; }
+        button.danger { background: #991b1b; border-color: #ef4444; }
+        button.danger:hover { background: #b91c1c; }
+        button.warning { background: #b45309; border-color: #fbbf24; }
+        button.warning:hover { background: #c2410c; }
+        button.blue { background: #1d4ed8; border-color: #60a5fa; }
+        button.blue:hover { background: #2563eb; }
+        
+        .separator { width: 1px; height: 28px; background: #4b5563; margin: 0 4px; }
+        
+        #status {
+            margin-left: auto; color: #eab308; font-size: 10px;
+            background: #111827; padding: 3px 10px; border-radius: 20px;
+            font-family: monospace; white-space: nowrap;
+        }
+        
+        #country-panel {
+            position: fixed; right: 8px; top: 56px; width: 220px;
+            max-height: calc(100vh - 70px); overflow-y: auto;
+            background: #1f2937; border: 1px solid #eab308; border-radius: 8px;
+            padding: 8px; z-index: 90; box-shadow: -5px 0 20px rgba(0,0,0,0.5);
+        }
+        .country-panel-title {
+            font-size: 10px; color: #eab308; text-align: center;
+            padding-bottom: 6px; border-bottom: 1px solid #374151; margin-bottom: 6px;
+        }
+        .country-btn {
+            width: 100%; padding: 4px 6px; text-align: left; cursor: pointer;
+            border: none; margin-bottom: 3px; color: white; font-weight: bold;
+            border-radius: 4px; transition: all 0.1s; display: flex; align-items: center; gap: 6px;
+            font-size: 10px;
+        }
+        .country-btn:hover { filter: brightness(1.2); transform: translateX(-2px); }
+        .country-btn.selected { border: 2px solid white; box-shadow: 0 0 8px rgba(255,255,255,0.5); }
+        .color-preview { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; }
+        
+        #build-panel {
+            position: fixed; left: 8px; bottom: 60px;
+            background: #1f2937; border: 1px solid #eab308; border-radius: 8px;
+            padding: 6px; z-index: 90; display: flex; gap: 4px;
+            flex-wrap: wrap;
+        }
+        .build-btn {
+            padding: 5px 8px; cursor: pointer; background: #374151; color: white;
+            border: 1px solid #4b5563; border-radius: 4px; font-size: 10px;
+            transition: all 0.2s; display: flex; align-items: center; gap: 4px;
+        }
+        .build-btn:hover { background: #4b5563; }
+        .build-btn.active { background: #2d5a2c; border-color: #8bc34a; }
+        
+        #info {
+            position: fixed; bottom: 8px; left: 8px;
+            background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 4px;
+            font-size: 9px; font-family: monospace; z-index: 95;
+            color: #aaa; pointer-events: none;
+        }
+        
+        canvas {
+            display: block; margin-top: 50px; cursor: crosshair;
+            background: #1a3a4a;
+        }
+        
+        .shortcuts {
+            position: fixed; bottom: 8px; right: 246px;
+            background: rgba(0,0,0,0.5); padding: 4px 8px; border-radius: 4px;
+            font-size: 8px; color: #888; text-align: right;
+            pointer-events: none;
+        }
+        
+        #mini-map {
+            position: fixed; bottom: 8px; right: 8px;
+            background: rgba(0,0,0,0.7); border: 1px solid #4b5563; border-radius: 4px;
+            padding: 4px; z-index: 95;
+        }
+        #mini-canvas { width: 140px; height: 140px; border: 1px solid #555; }
+        
+        @media (max-width: 768px) {
+            #country-panel { width: 160px; right: 4px; top: 52px; padding: 4px; }
+            .country-btn { padding: 3px 4px; font-size: 8px; }
+            button { padding: 3px 6px; font-size: 9px; }
+            #build-panel { left: 4px; bottom: 50px; padding: 4px; gap: 2px; }
+            .build-btn { padding: 3px 5px; font-size: 8px; }
+            #mini-canvas { width: 100px; height: 100px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <button id="btn-draw" class="tool-btn active">🎨 Рисовать</button>
+        <button id="btn-erase" class="tool-btn">🧽 Стереть</button>
+        <button id="btn-fill" class="tool-btn">🪣 Заливка</button>
+        <div class="separator"></div>
+        <button id="btn-load" class="blue">📂 Загрузить</button>
+        <button id="btn-export" class="blue">💾 Экспорт</button>
+        <button id="btn-restore" class="blue">🔄 Восстановить</button>
+        <div class="separator"></div>
+        <button id="btn-random-factories" class="warning">🎲 Заводы</button>
+        <button id="btn-random-ports" class="warning">🎲 Порты</button>
+        <div class="separator"></div>
+        <button id="btn-clear" class="danger">🗑️ Очистить</button>
+        <button id="btn-demo" class="warning">🗺️ Демо</button>
+        <button id="btn-demo-europe" class="warning">🌍 Европа</button>
+        <span id="status">⚡ Готов | Клеток: 0</span>
+    </div>
+    
+    <div id="country-panel">
+        <div class="country-panel-title">🎖️ СТРАНЫ (45)</div>
+        <div id="country-list"></div>
+    </div>
+    
+    <div id="build-panel">
+        <button id="btn-build-factory" class="build-btn">🏭 Завод</button>
+        <button id="btn-build-port" class="build-btn">⚓ Порт</button>
+        <button id="btn-remove-building" class="build-btn danger">🗑️ Убрать</button>
+        <button id="btn-capital" class="build-btn">👑 Столица</button>
+    </div>
+    
+    <div id="info">
+        📍 X: <span id="coord-x">--</span>, Y: <span id="coord-y">--</span>
+        | 🏭 <span id="cell-factories">0</span> | ⚓ <span id="cell-port">нет</span>
+        | 👑 <span id="cell-owner">—</span>
+        | Клеток: <span id="total-cells">0</span>
+    </div>
+    
+    <div class="shortcuts">
+        🖱️ ЛКМ+Drag — рисовать<br>
+        🖱️ ПКМ — стереть<br>
+        🖱️ Ctrl+ЛКМ — завод<br>
+        🖱️ Shift+ЛКМ — порт<br>
+        🖱️ Alt+ЛКМ — удалить постройку<br>
+        ⌨️ WASD — камера | Колесо — зум<br>
+        ⌨️ 1-9, 0 — выбор страны<br>
+        ⌨️ Пробел — центрировать
+    </div>
+    
+    <div id="mini-map">
+        <canvas id="mini-canvas" width="140" height="140"></canvas>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // ============================================================
+        //  HOI5 Map Editor v4.0 — Полноценный редактор карт
+        // ============================================================
+        
+        const canvas = document.getElementById('canvas');
+        let ctx = canvas.getContext('2d');
+        const miniCanvas = document.getElementById('mini-canvas');
+        const miniCtx = miniCanvas.getContext('2d');
+        const CELL_SIZE = 20;
+        
+        // Данные карты
+        let gridData = {};
+        let cellStats = {};
+        let capitals = {};
+        
+        // Выбранная страна
+        let selectedCountry = 'germany';
+        let brushMode = 'draw'; // draw, erase, fill
+        let capitalMode = false;
+        let isDrawing = false;
+        
+        // Камера
+        let camera = { x: 0, y: 0, zoom: 0.8 };
+        let worldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+        
+        // Страны (45 стран для рисования)
+        const countries = {
+            // === ЕВРОПА ===
+            "germany":        { name: "Германия",          color: "#3a3a3a", shortcut: "1", region: "europe" },
+            "ussr":           { name: "СССР",              color: "#990000", shortcut: "2", region: "europe" },
+            "poland":         { name: "Польша",            color: "#ffc0cb", shortcut: "3", region: "europe" },
+            "france":         { name: "Франция",           color: "#3b82f6", shortcut: "4", region: "europe" },
+            "uk":             { name: "Великобритания",    color: "#ef4444", shortcut: "5", region: "europe" },
+            "italy":          { name: "Италия",            color: "#166534", shortcut: "6", region: "europe" },
+            "spain":          { name: "Испания",           color: "#fbbf24", shortcut: "7", region: "europe" },
+            "portugal":       { name: "Португалия",        color: "#105d10", shortcut: "8", region: "europe" },
+            "netherlands":    { name: "Нидерланды",        color: "#f97316", shortcut: "9", region: "europe" },
+            "belgium":        { name: "Бельгия",           color: "#eab308", shortcut: "0", region: "europe" },
+            "switzerland":    { name: "Швейцария",         color: "#dc2626", region: "europe" },
+            "romania":        { name: "Румыния",           color: "#f59e0b", region: "europe" },
+            "hungary":        { name: "Венгрия",           color: "#16a34a", region: "europe" },
+            "bulgaria":       { name: "Болгария",          color: "#059669", region: "europe" },
+            "finland":        { name: "Финляндия",         color: "#e0e7ff", region: "europe" },
+            "norway":         { name: "Норвегия",          color: "#dc2626", region: "europe" },
+            "sweden":         { name: "Швеция",            color: "#2563eb", region: "europe" },
+            "denmark":        { name: "Дания",             color: "#c026d3", region: "europe" },
+            "czechoslovakia": { name: "Чехословакия",      color: "#3b82f6", region: "europe" },
+            "austria":        { name: "Австрия",           color: "#ef4444", region: "europe" },
+            "yugoslavia":     { name: "Югославия",         color: "#1e40af", region: "europe" },
+            "greece":         { name: "Греция",            color: "#60a5fa", region: "europe" },
+            "albania":        { name: "Албания",           color: "#dc2626", region: "europe" },
+            "lithuania":      { name: "Литва",             color: "#065f46", region: "europe" },
+            "latvia":         { name: "Латвия",            color: "#7f1d1d", region: "europe" },
+            "estonia":        { name: "Эстония",           color: "#1d4ed8", region: "europe" },
+            "slovakia":       { name: "Словакия",          color: "#2563eb", region: "europe" },
+            "luxembourg":     { name: "Люксембург",        color: "#06b6d4", region: "europe" },
+            "ireland":        { name: "Ирландия",          color: "#16a34a", region: "europe" },
+            "iceland":        { name: "Исландия",          color: "#3b82f6", region: "europe" },
+            
+            // === БЛИЖНИЙ ВОСТОК ===
+            "turkey":         { name: "Турция",            color: "#dc2626", region: "mideast" },
+            "iraq":           { name: "Ирак",              color: "#166534", region: "mideast" },
+            "iran":           { name: "Иран",              color: "#059669", region: "mideast" },
+            "saudi_arabia":   { name: "Саудовская Аравия", color: "#15803d", region: "mideast" },
+            "syria":          { name: "Сирия",             color: "#14532d", region: "mideast" },
+            "jordan":         { name: "Иордания",          color: "#065f46", region: "mideast" },
+            "palestine":      { name: "Палестина",         color: "#fbbf24", region: "mideast" },
+            
+            // === СЕВЕРНАЯ АФРИКА ===
+            "egypt":          { name: "Египет",            color: "#f59e0b", region: "africa" },
+            "libya":          { name: "Ливия",             color: "#7c2d12", region: "africa" },
+            "tunisia":        { name: "Тунис",             color: "#c2410c", region: "africa" },
+            "algeria":        { name: "Алжир",             color: "#065f46", region: "africa" },
+            "morocco":        { name: "Марокко",           color: "#047857", region: "africa" },
+            
+            // === АЗИЯ ===
+            "japan":          { name: "Япония",            color: "#bc002d", region: "asia" },
+            "china":          { name: "Китай",             color: "#00247d", region: "asia" },
+            "india":          { name: "Индия",             color: "#ff9933", region: "asia" },
+            "thailand":       { name: "Таиланд",           color: "#0050a0", region: "asia" },
+            "manchukuo":      { name: "Маньчжоу-Го",       color: "#f7c948", region: "asia" },
+            "korea":          { name: "Корея",             color: "#003478", region: "asia" },
+            "taiwan":         { name: "Тайвань",           color: "#fe0000", region: "asia" },
+            "philippines":    { name: "Филиппины",          color: "#0038a8", region: "asia" },
+            "burma":          { name: "Бирма",             color: "#fecb00", region: "asia" },
+            "vietnam":        { name: "Вьетнам",           color: "#da251d", region: "asia" },
+            "laos":           { name: "Лаос",              color: "#ce1126", region: "asia" },
+            "cambodia":       { name: "Камбоджа",          color: "#032ea1", region: "asia" },
+            "indonesia":      { name: "Индонезия",         color: "#ff0000", region: "asia" },
+            "malaysia":       { name: "Малайя",            color: "#010066", region: "asia" },
+            "nepal":          { name: "Непал",             color: "#dc143c", region: "asia" },
+            "afghanistan":    { name: "Афганистан",        color: "#000000", region: "asia" },
+            "tuva":           { name: "Тува",              color: "#cc0000", region: "asia" },
+            "mongolia":       { name: "Монголия",          color: "#0064c8", region: "asia" },
+            "sinkiang":       { name: "Синьцзян",          color: "#1e40af", region: "asia" },
+            "tibet":          { name: "Тибет",             color: "#dc2626", region: "asia" },
+            "ccp":            { name: "Ком. Китай",         color: "#cc0000", region: "asia" },
+            "ma_clique":      { name: "Сибэй Сань-Ма",     color: "#8b4513", region: "asia" },
+            "yunnan":         { name: "Юньнаньская клика",  color: "#228b22", region: "asia" },
+            "guangxi":        { name: "Гуансийская клика",  color: "#2f4f4f", region: "asia" },
+            "shanxi":         { name: "Шаньси",             color: "#b8860b", region: "asia" },
+        };
+        
+        // ============================================================
+        //  ОБНОВЛЕНИЕ ГРАНИЦ
+        // ============================================================
+        
+        function updateWorldBounds() {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (const pos of Object.keys(gridData)) {
+                const [x, y] = pos.split(',').map(Number);
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y);
+                maxY = Math.max(maxY, y);
+            }
+            if (minX === Infinity) {
+                worldBounds = { minX: -50, maxX: 50, minY: -30, maxY: 30 };
+            } else {
+                worldBounds = { minX: minX - 1, maxX: maxX + 1, minY: minY - 1, maxY: maxY + 1 };
+            }
+            document.getElementById('total-cells').innerText = Object.keys(gridData).length;
+            if (typeof scheduleAutoSave === 'function') scheduleAutoSave();
+        }
+        
+        // ============================================================
+        //  ПОЛУЧЕНИЕ STATS КЛЕТКИ
+        // ============================================================
+        
+        function getCellStats(key) {
+            if (!cellStats[key]) {
+                cellStats[key] = { population: 10000, factories: 0, buildings: [] };
+            }
+            return cellStats[key];
+        }
+        
+        // ============================================================
+        //  ПРЕОБРАЗОВАНИЕ КООРДИНАТ
+        // ============================================================
+        
+        function screenToWorld(screenX, screenY) {
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = screenX - rect.left;
+            const canvasY = screenY - rect.top;
+            return {
+                x: Math.floor(((canvasX - canvas.width / 2) / camera.zoom + camera.x) / CELL_SIZE),
+                y: Math.floor(((canvasY - canvas.height / 2) / camera.zoom + camera.y) / CELL_SIZE)
+            };
+        }
+        
+        function worldToScreen(x, y) {
+            return {
+                x: (x * CELL_SIZE - camera.x) * camera.zoom + canvas.width / 2,
+                y: (y * CELL_SIZE - camera.y) * camera.zoom + canvas.height / 2
+            };
+        }
+        
+        // ============================================================
+        //  РЕНДЕР
+        // ============================================================
+        
+        function render() {
+            if (!ctx) return;
+            
+            ctx.fillStyle = '#1a3a4a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const startX = Math.max(worldBounds.minX, Math.floor((camera.x - canvas.width / 2 / camera.zoom) / CELL_SIZE));
+            const endX = Math.min(worldBounds.maxX, Math.ceil((camera.x + canvas.width / 2 / camera.zoom) / CELL_SIZE));
+            const startY = Math.max(worldBounds.minY, Math.floor((camera.y - canvas.height / 2 / camera.zoom) / CELL_SIZE));
+            const endY = Math.min(worldBounds.maxY, Math.ceil((camera.y + canvas.height / 2 / camera.zoom) / CELL_SIZE));
+            
+            const zoom = camera.zoom;
+            const size = CELL_SIZE * zoom;
+            const camX = canvas.width / 2 - camera.x * zoom;
+            const camY = canvas.height / 2 - camera.y * zoom;
+            
+            const colorBuckets = new Map();
+            
+            for (let x = startX; x <= endX; x++) {
+                for (let y = startY; y <= endY; y++) {
+                    const key = `${x},${y}`;
+                    const owner = gridData[key];
+                    if (!owner) continue;
+                    
+                    const screenX = x * CELL_SIZE * zoom + camX;
+                    const screenY = y * CELL_SIZE * zoom + camY;
+                    
+                    if (screenX + size < -50 || screenX > canvas.width + 50 || 
+                        screenY + size < -50 || screenY > canvas.height + 50) continue;
+                    
+                    const color = countries[owner]?.color || '#666';
+                    if (!colorBuckets.has(color)) colorBuckets.set(color, []);
+                    colorBuckets.get(color).push(screenX, screenY);
+                }
+            }
+            
+            for (const [color, coords] of colorBuckets) {
+                ctx.fillStyle = color;
+                for (let i = 0; i < coords.length; i += 2) {
+                    ctx.fillRect(coords[i], coords[i + 1], size, size);
+                }
+            }
+            
+            // Границы
+            if (size > 4) {
+                const borderPath = new Path2D();
+                for (const [color, coords] of colorBuckets) {
+                    for (let i = 0; i < coords.length; i += 2) {
+                        borderPath.rect(coords[i], coords[i + 1], size, size);
+                    }
+                }
+                ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+                ctx.lineWidth = 0.5;
+                ctx.stroke(borderPath);
+            }
+            
+            // Иконки построек
+            if (size > 12) {
+                ctx.font = `${Math.max(8, Math.min(14, size * 0.55))}px "Segoe UI Emoji"`;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                
+                for (let x = startX; x <= endX; x++) {
+                    for (let y = startY; y <= endY; y++) {
+                        const key = `${x},${y}`;
+                        const owner = gridData[key];
+                        if (!owner) continue;
+                        
+                        const stats = cellStats[key];
+                        if (!stats) continue;
+                        
+                        const hasPort = stats.buildings?.includes('port');
+                        const hasFactory = stats.factories > 0;
+                        if (!hasPort && !hasFactory) continue;
+                        
+                        const screenX = x * CELL_SIZE * zoom + camX;
+                        const screenY = y * CELL_SIZE * zoom + camY;
+                        
+                        let yOffset = 2;
+                        if (hasPort) {
+                            ctx.fillStyle = '#3b82f6';
+                            ctx.fillText('⚓', screenX + 2, screenY + yOffset);
+                            yOffset += size * 0.45;
+                        }
+                        if (hasFactory) {
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillText('🏭', screenX + 2, screenY + yOffset);
+                        }
+                    }
+                }
+            }
+            
+            // Столицы
+            if (size > 4) {
+                const crownSize = Math.max(10, Math.min(18, size * 0.8));
+                ctx.font = `${crownSize}px "Segoe UI Emoji"`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                for (const [cid, cap] of Object.entries(capitals)) {
+                    const capScreenX = cap.x * CELL_SIZE * zoom + camX + size / 2;
+                    const capScreenY = cap.y * CELL_SIZE * zoom + camY + size / 2;
+                    
+                    if (capScreenX < -50 || capScreenX > canvas.width + 50 ||
+                        capScreenY < -50 || capScreenY > canvas.height + 50) continue;
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('👑', capScreenX, capScreenY - crownSize * 0.5);
+                    
+                    ctx.font = `bold ${Math.max(7, crownSize * 0.5)}px "Segoe UI"`;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeText(cap.name, capScreenX, capScreenY + crownSize * 0.5);
+                    ctx.fillText(cap.name, capScreenX, capScreenY + crownSize * 0.5);
+                    
+                    ctx.font = `${crownSize}px "Segoe UI Emoji"`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                }
+            }
+
+            // Мини-карта
+            renderMiniMap();
+        }
+        
+        // ============================================================
+        //  МИНИ-КАРТА
+        // ============================================================
+        
+        function renderMiniMap() {
+            miniCtx.fillStyle = '#1a3a4a';
+            miniCtx.fillRect(0, 0, 140, 140);
+            
+            const allPoints = Object.keys(gridData).map(p => p.split(',').map(Number));
+            if (allPoints.length === 0) return;
+            
+            const minX = Math.min(...allPoints.map(p => p[0]));
+            const maxX = Math.max(...allPoints.map(p => p[0]));
+            const minY = Math.min(...allPoints.map(p => p[1]));
+            const maxY = Math.max(...allPoints.map(p => p[1]));
+            const width = maxX - minX + 1;
+            const height = maxY - minY + 1;
+            const scaleX = 140 / width;
+            const scaleY = 140 / height;
+            
+            for (const [pos, owner] of Object.entries(gridData)) {
+                const [x, y] = pos.split(',').map(Number);
+                const mx = (x - minX) * scaleX;
+                const my = (y - minY) * scaleY;
+                const size = Math.max(1, Math.min(3, Math.floor(scaleX)));
+                miniCtx.fillStyle = countries[owner]?.color || '#555';
+                miniCtx.fillRect(mx, my, size, size);
+            }
+        }
+        
+        // ============================================================
+        //  ИНСТРУМЕНТЫ
+        // ============================================================
+        
+        function setMode(mode) {
+            brushMode = mode;
+            document.getElementById('btn-draw').classList.toggle('active', mode === 'draw');
+            document.getElementById('btn-erase').classList.toggle('active', mode === 'erase');
+            document.getElementById('btn-fill').classList.toggle('active', mode === 'fill');
+            canvas.style.cursor = mode === 'fill' ? 'cell' : 'crosshair';
+        }
+        
+        function floodFill(startX, startY, targetId, replaceId) {
+            if (targetId === replaceId) return;
+            
+            const MAX_FILL = 10000;
+            const stack = [[startX, startY]];
+            const visited = new Set();
+            visited.add(`${startX},${startY}`);
+            
+            let count = 0;
+            while (stack.length > 0 && count < MAX_FILL) {
+                const [x, y] = stack.pop();
+                const ck = `${x},${y}`;
+                const cellVal = gridData[ck];
+                
+                const isEmpty = !cellVal;
+                const isSameCountry = cellVal === targetId;
+                const shouldFill = (targetId === null) ? isEmpty : isSameCountry;
+                
+                if (!shouldFill) continue;
+                
+                gridData[ck] = replaceId;
+                count++;
+                
+                for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+                    const nx = x + dx, ny = y + dy;
+                    const nk = `${nx},${ny}`;
+                    if (!visited.has(nk)) {
+                        visited.add(nk);
+                        stack.push([nx, ny]);
+                    }
+                }
+            }
+            
+            if (count > 0) {
+                updateWorldBounds();
+                render();
+                document.getElementById('status').innerHTML = `🪣 Заливка: ${count} клеток`;
+            }
+        }
+        
+        function handleClick(e, isContextMenu = false) {
+            const worldPos = screenToWorld(e.clientX, e.clientY);
+            if (worldPos.x === undefined || worldPos.y === undefined) return;
+            
+            const key = `${worldPos.x},${worldPos.y}`;
+            
+            // Ctrl+ЛКМ — завод
+            if (e.ctrlKey && !isContextMenu) {
+                if (gridData[key]) {
+                    const stats = getCellStats(key);
+                    stats.factories = (stats.factories || 0) + 1;
+                    cellStats[key] = stats;
+                    render();
+                    updateInfoDisplay(worldPos.x, worldPos.y);
+                }
+                return;
+            }
+            
+            // Shift+ЛКМ — порт
+            if (e.shiftKey && !isContextMenu) {
+                if (gridData[key]) {
+                    const stats = getCellStats(key);
+                    if (!stats.buildings) stats.buildings = [];
+                    if (!stats.buildings.includes('port')) {
+                        stats.buildings.push('port');
+                        cellStats[key] = stats;
+                        render();
+                        updateInfoDisplay(worldPos.x, worldPos.y);
+                    }
+                }
+                return;
+            }
+            
+            // Alt+ЛКМ — удалить постройку
+            if (e.altKey && !isContextMenu) {
+                if (cellStats[key]) {
+                    const stats = cellStats[key];
+                    if (stats.factories > 0) {
+                        stats.factories--;
+                        if (stats.factories === 0 && (!stats.buildings || stats.buildings.length === 0)) {
+                            delete cellStats[key];
+                        } else {
+                            cellStats[key] = stats;
+                        }
+                        render();
+                        updateInfoDisplay(worldPos.x, worldPos.y);
+                    } else if (stats.buildings?.includes('port')) {
+                        stats.buildings = stats.buildings.filter(b => b !== 'port');
+                        if (stats.factories === 0 && stats.buildings.length === 0) {
+                            delete cellStats[key];
+                        } else {
+                            cellStats[key] = stats;
+                        }
+                        render();
+                        updateInfoDisplay(worldPos.x, worldPos.y);
+                    }
+                }
+                return;
+            }
+            
+            // ПКМ — стереть страну / удалить столицу
+            if (isContextMenu) {
+                // Удалить столицу если клик по ячейке столицы
+                for (const [cid, cap] of Object.entries(capitals)) {
+                    if (cap.x === worldPos.x && cap.y === worldPos.y) {
+                        delete capitals[cid];
+                        render();
+                        updateInfoDisplay(worldPos.x, worldPos.y);
+                        document.getElementById('status').innerHTML = `👑 Столица ${cap.name} удалена`;
+                        return;
+                    }
+                }
+                delete gridData[key];
+                delete cellStats[key];
+                updateWorldBounds();
+                render();
+                return;
+            }
+            
+            // Режим столицы — установить столицу
+            if (capitalMode) {
+                if (gridData[key] === selectedCountry) {
+                    const name = prompt(`Название столицы для ${countries[selectedCountry]?.name || selectedCountry}:`, '');
+                    if (name !== null && name.trim() !== '') {
+                        capitals[selectedCountry] = { x: worldPos.x, y: worldPos.y, name: name.trim() };
+                        render();
+                        updateInfoDisplay(worldPos.x, worldPos.y);
+                        document.getElementById('status').innerHTML = `👑 Столица ${name.trim()} установлена для ${countries[selectedCountry]?.name || selectedCountry}`;
+                        updateCountryPanel();
+                    }
+                } else {
+                    document.getElementById('status').innerHTML = '⚠️ Столица должна быть на территории своей страны!';
+                }
+                // Выключаем режим столицы после клика
+                capitalMode = false;
+                document.getElementById('btn-capital').classList.remove('active');
+                return;
+            }
+            
+            // Заливка — по клику
+            if (brushMode === 'fill') {
+                const currentOwner = gridData[key] || null;
+                floodFill(worldPos.x, worldPos.y, currentOwner, selectedCountry);
+                return;
+            }
+            
+            // Рисование/стирание
+            if (brushMode === 'draw') {
+                if (gridData[key] !== selectedCountry) {
+                    gridData[key] = selectedCountry;
+                    updateWorldBounds();
+                    render();
+                }
+            } else if (brushMode === 'erase') {
+                delete gridData[key];
+                delete cellStats[key];
+                updateWorldBounds();
+                render();
+            }
+        }
+        
+        function handlePaint(e) {
+            if (!isDrawing) return;
+            if (brushMode === 'fill') return;
+            if (capitalMode) return;
+            const worldPos = screenToWorld(e.clientX, e.clientY);
+            if (worldPos.x === undefined || worldPos.y === undefined) return;
+            
+            const key = `${worldPos.x},${worldPos.y}`;
+            
+            if (brushMode === 'draw') {
+                if (gridData[key] !== selectedCountry) {
+                    gridData[key] = selectedCountry;
+                    updateWorldBounds();
+                    render();
+                }
+            } else if (brushMode === 'erase') {
+                delete gridData[key];
+                delete cellStats[key];
+                updateWorldBounds();
+                render();
+            }
+        }
+        
+        function updateInfoDisplay(x, y) {
+            const key = `${x},${y}`;
+            const owner = gridData[key];
+            const stats = cellStats[key] || { factories: 0, buildings: [] };
+            document.getElementById('coord-x').innerText = x;
+            document.getElementById('coord-y').innerText = y;
+            document.getElementById('cell-owner').innerText = owner ? (countries[owner]?.name || owner) : '—';
+            document.getElementById('cell-factories').innerText = stats.factories || 0;
+            document.getElementById('cell-port').innerText = stats.buildings?.includes('port') ? 'да' : 'нет';
+            
+            let capitalInfo = '';
+            for (const [cid, cap] of Object.entries(capitals)) {
+                if (cap.x === x && cap.y === y) {
+                    capitalInfo = ` | Столица: ${cap.name}`;
+                    break;
+                }
+            }
+            document.getElementById('info').innerHTML =
+                `📍 X: <span id="coord-x">${x}</span>, Y: <span id="coord-y">${y}</span>` +
+                ` | 🏭 <span id="cell-factories">${stats.factories || 0}</span>` +
+                ` | ⚓ <span id="cell-port">${stats.buildings?.includes('port') ? 'да' : 'нет'}</span>` +
+                ` | 👑 <span id="cell-owner">${owner ? (countries[owner]?.name || owner) : '—'}</span>` +
+                (capitalInfo ? ` | 👑${capitalInfo}` : '') +
+                ` | Клеток: <span id="total-cells">${Object.keys(gridData).length}</span>`;
+        }
+        
+        // ============================================================
+        //  РАНДОМНАЯ ГЕНЕРАЦИЯ
+        // ============================================================
+        
+        function randomFactories(densityPercent) {
+            const cells = Object.keys(gridData);
+            if (cells.length === 0) {
+                alert('Нет клеток на карте!');
+                return 0;
+            }
+            
+            // Очищаем старые заводы
+            for (const key of Object.keys(cellStats)) {
+                if (cellStats[key]?.factories > 0) {
+                    cellStats[key].factories = 0;
+                    if (cellStats[key].factories === 0 && (!cellStats[key].buildings || cellStats[key].buildings.length === 0)) {
+                        delete cellStats[key];
+                    }
+                }
+            }
+            
+            const targetCount = Math.floor(cells.length * (densityPercent / 100));
+            const shuffled = [...cells];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            
+            let added = 0;
+            for (let i = 0; i < Math.min(targetCount, shuffled.length); i++) {
+                const key = shuffled[i];
+                const [x, y] = key.split(',').map(Number);
+                const stats = getCellStats(key);
+                stats.factories = 1;
+                cellStats[key] = stats;
+                added++;
+            }
+            
+            render();
+            return added;
+        }
+        
+        function randomPorts(densityPercent) {
+            const cells = Object.keys(gridData);
+            if (cells.length === 0) {
+                alert('Нет клеток на карте!');
+                return 0;
+            }
+            
+            const shuffled = [...cells];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            
+            let added = 0;
+            const targetCount = Math.floor(cells.length * (densityPercent / 100));
+            
+            for (let i = 0; i < Math.min(targetCount, shuffled.length); i++) {
+                const key = shuffled[i];
+                const [x, y] = key.split(',').map(Number);
+                
+                // Проверяем, что клетка у воды
+                let isCoastal = false;
+                for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+                    if (!gridData[`${x+dx},${y+dy}`]) {
+                        isCoastal = true;
+                        break;
+                    }
+                }
+                
+                if (isCoastal) {
+                    const stats = getCellStats(key);
+                    if (!stats.buildings) stats.buildings = [];
+                    if (!stats.buildings.includes('port')) {
+                        stats.buildings.push('port');
+                        cellStats[key] = stats;
+                        added++;
+                    }
+                }
+            }
+            
+            render();
+            return added;
+        }
+        
+        // ============================================================
+        //  ДЕМО-КАРТА (простая)
+        // ============================================================
+        
+        function loadDemo() {
+            gridData = {};
+            cellStats = {};
+            capitals = {};
+            
+            // Германия
+            for (let x = -3; x <= 3; x++) {
+                for (let y = -3; y <= 2; y++) {
+                    gridData[`${x},${y}`] = 'germany';
+                }
+            }
+            // Франция
+            for (let x = -7; x <= -3; x++) {
+                for (let y = -1; y <= 3; y++) {
+                    gridData[`${x},${y}`] = 'france';
+                }
+            }
+            // Польша
+            for (let x = 4; x <= 8; x++) {
+                for (let y = -3; y <= 1; y++) {
+                    gridData[`${x},${y}`] = 'poland';
+                }
+            }
+            // СССР
+            for (let x = 9; x <= 14; x++) {
+                for (let y = -4; y <= 3; y++) {
+                    gridData[`${x},${y}`] = 'ussr';
+                }
+            }
+            // Италия
+            for (let x = -1; x <= 3; x++) {
+                for (let y = 4; y <= 8; y++) {
+                    gridData[`${x},${y}`] = 'italy';
+                }
+            }
+            // Англия (остров)
+            for (let x = -12; x <= -8; x++) {
+                for (let y = -5; y <= -1; y++) {
+                    gridData[`${x},${y}`] = 'uk';
+                }
+            }
+            
+            // Добавим тестовые заводы
+            randomFactories(15);
+            
+            updateWorldBounds();
+            camera.x = 0;
+            camera.y = 0;
+            camera.zoom = 1.2;
+            render();
+            updateCountryPanel();
+            document.getElementById('status').innerHTML = `🗺️ Демо загружена | Клеток: ${Object.keys(gridData).length}`;
+        }
+        
+        // ============================================================
+        //  ДЕМО-КАРТА ЕВРОПЫ (полная)
+        // ============================================================
+        
+        function loadDemoEurope() {
+            gridData = {};
+            cellStats = {};
+            capitals = {};
+            
+            // ===== ГЕРМАНИЯ (центр Европы) =====
+            for (let x = -2; x <= 4; x++) {
+                for (let y = -2; y <= 3; y++) {
+                    gridData[`${x},${y}`] = 'germany';
+                }
+            }
+            
+            // ===== ФРАНЦИЯ (запад) =====
+            for (let x = -8; x <= -3; x++) {
+                for (let y = -2; y <= 4; y++) {
+                    gridData[`${x},${y}`] = 'france';
+                }
+            }
+            
+            // ===== ВЕЛИКОБРИТАНИЯ (остров) =====
+            for (let x = -14; x <= -10; x++) {
+                for (let y = -6; y <= -1; y++) {
+                    gridData[`${x},${y}`] = 'uk';
+                }
+            }
+            
+            // ===== ИРЛАНДИЯ =====
+            for (let x = -16; x <= -14; x++) {
+                for (let y = -5; y <= -2; y++) {
+                    gridData[`${x},${y}`] = 'ireland';
+                }
+            }
+            
+            // ===== ИСПАНИЯ =====
+            for (let x = -10; x <= -4; x++) {
+                for (let y = 5; y <= 10; y++) {
+                    gridData[`${x},${y}`] = 'spain';
+                }
+            }
+            
+            // ===== ПОРТУГАЛИЯ =====
+            for (let x = -11; x <= -10; x++) {
+                for (let y = 5; y <= 10; y++) {
+                    gridData[`${x},${y}`] = 'portugal';
+                }
+            }
+            
+            // ===== ИТАЛИЯ =====
+            for (let x = -1; x <= 4; x++) {
+                for (let y = 4; y <= 9; y++) {
+                    gridData[`${x},${y}`] = 'italy';
+                }
+            }
+            
+            // ===== НИДЕРЛАНДЫ =====
+            for (let x = -3; x <= -1; x++) {
+                for (let y = -3; y <= -2; y++) {
+                    gridData[`${x},${y}`] = 'netherlands';
+                }
+            }
+            
+            // ===== БЕЛЬГИЯ =====
+            for (let x = -4; x <= -2; x++) {
+                for (let y = -2; y <= -1; y++) {
+                    gridData[`${x},${y}`] = 'belgium';
+                }
+            }
+            
+            // ===== ШВЕЙЦАРИЯ =====
+            for (let x = -2; x <= 0; x++) {
+                for (let y = 3; y <= 4; y++) {
+                    gridData[`${x},${y}`] = 'switzerland';
+                }
+            }
+            
+            // ===== АВСТРИЯ =====
+            for (let x = 1; x <= 4; x++) {
+                for (let y = 3; y <= 5; y++) {
+                    gridData[`${x},${y}`] = 'austria';
+                }
+            }
+            
+            // ===== ЧЕХОСЛОВАКИЯ =====
+            for (let x = 1; x <= 5; x++) {
+                for (let y = 1; y <= 3; y++) {
+                    gridData[`${x},${y}`] = 'czechoslovakia';
+                }
+            }
+            
+            // ===== ПОЛЬША =====
+            for (let x = 5; x <= 10; x++) {
+                for (let y = -2; y <= 2; y++) {
+                    gridData[`${x},${y}`] = 'poland';
+                }
+            }
+            
+            // ===== СССР (огромная территория) =====
+            for (let x = 11; x <= 22; x++) {
+                for (let y = -6; y <= 6; y++) {
+                    gridData[`${x},${y}`] = 'ussr';
+                }
+            }
+            
+            // ===== ФИНЛЯНДИЯ =====
+            for (let x = 11; x <= 15; x++) {
+                for (let y = -8; y <= -5; y++) {
+                    gridData[`${x},${y}`] = 'finland';
+                }
+            }
+            
+            // ===== НОРВЕГИЯ =====
+            for (let x = -4; x <= 0; x++) {
+                for (let y = -10; y <= -6; y++) {
+                    gridData[`${x},${y}`] = 'norway';
+                }
+            }
+            
+            // ===== ШВЕЦИЯ =====
+            for (let x = 1; x <= 4; x++) {
+                for (let y = -9; y <= -5; y++) {
+                    gridData[`${x},${y}`] = 'sweden';
+                }
+            }
+            
+            // ===== ДАНИЯ =====
+            for (let x = -1; x <= 1; x++) {
+                for (let y = -5; y <= -4; y++) {
+                    gridData[`${x},${y}`] = 'denmark';
+                }
+            }
+            
+            // ===== ЛИТВА =====
+            for (let x = 8; x <= 10; x++) {
+                for (let y = -4; y <= -3; y++) {
+                    gridData[`${x},${y}`] = 'lithuania';
+                }
+            }
+            
+            // ===== ЛАТВИЯ =====
+            for (let x = 9; x <= 11; x++) {
+                for (let y = -5; y <= -4; y++) {
+                    gridData[`${x},${y}`] = 'latvia';
+                }
+            }
+            
+            // ===== ЭСТОНИЯ =====
+            for (let x = 10; x <= 12; x++) {
+                for (let y = -6; y <= -5; y++) {
+                    gridData[`${x},${y}`] = 'estonia';
+                }
+            }
+            
+            // ===== РУМЫНИЯ =====
+            for (let x = 5; x <= 9; x++) {
+                for (let y = 4; y <= 7; y++) {
+                    gridData[`${x},${y}`] = 'romania';
+                }
+            }
+            
+            // ===== ВЕНГРИЯ =====
+            for (let x = 3; x <= 6; x++) {
+                for (let y = 3; y <= 5; y++) {
+                    gridData[`${x},${y}`] = 'hungary';
+                }
+            }
+            
+            // ===== БОЛГАРИЯ =====
+            for (let x = 6; x <= 9; x++) {
+                for (let y = 7; y <= 9; y++) {
+                    gridData[`${x},${y}`] = 'bulgaria';
+                }
+            }
+            
+            // ===== ЮГОСЛАВИЯ =====
+            for (let x = 2; x <= 6; x++) {
+                for (let y = 6; y <= 10; y++) {
+                    gridData[`${x},${y}`] = 'yugoslavia';
+                }
+            }
+            
+            // ===== АЛБАНИЯ =====
+            for (let x = 3; x <= 5; x++) {
+                for (let y = 10; y <= 12; y++) {
+                    gridData[`${x},${y}`] = 'albania';
+                }
+            }
+            
+            // ===== ГРЕЦИЯ =====
+            for (let x = 5; x <= 8; x++) {
+                for (let y = 10; y <= 14; y++) {
+                    gridData[`${x},${y}`] = 'greece';
+                }
+            }
+            
+            // ===== ТУРЦИЯ =====
+            for (let x = 10; x <= 16; x++) {
+                for (let y = 8; y <= 12; y++) {
+                    gridData[`${x},${y}`] = 'turkey';
+                }
+            }
+            
+            // ===== СИРИЯ =====
+            for (let x = 13; x <= 16; x++) {
+                for (let y = 12; y <= 15; y++) {
+                    gridData[`${x},${y}`] = 'syria';
+                }
+            }
+            
+            // ===== ИРАК =====
+            for (let x = 16; x <= 20; x++) {
+                for (let y = 11; y <= 15; y++) {
+                    gridData[`${x},${y}`] = 'iraq';
+                }
+            }
+            
+            // ===== ИРАН =====
+            for (let x = 20; x <= 25; x++) {
+                for (let y = 10; y <= 16; y++) {
+                    gridData[`${x},${y}`] = 'iran';
+                }
+            }
+            
+            // ===== САУДОВСКАЯ АРАВИЯ =====
+            for (let x = 16; x <= 22; x++) {
+                for (let y = 15; y <= 20; y++) {
+                    gridData[`${x},${y}`] = 'saudi_arabia';
+                }
+            }
+            
+            // ===== ИОРДАНИЯ =====
+            for (let x = 13; x <= 15; x++) {
+                for (let y = 15; y <= 17; y++) {
+                    gridData[`${x},${y}`] = 'jordan';
+                }
+            }
+            
+            // ===== ПАЛЕСТИНА =====
+            for (let x = 12; x <= 13; x++) {
+                for (let y = 13; y <= 15; y++) {
+                    gridData[`${x},${y}`] = 'palestine';
+                }
+            }
+            
+            // ===== ЕГИПЕТ =====
+            for (let x = 10; x <= 14; x++) {
+                for (let y = 15; y <= 20; y++) {
+                    gridData[`${x},${y}`] = 'egypt';
+                }
+            }
+            
+            // ===== ЛИВИЯ =====
+            for (let x = 2; x <= 10; x++) {
+                for (let y = 15; y <= 20; y++) {
+                    gridData[`${x},${y}`] = 'libya';
+                }
+            }
+            
+            // ===== ТУНИС =====
+            for (let x = -2; x <= 2; x++) {
+                for (let y = 13; y <= 15; y++) {
+                    gridData[`${x},${y}`] = 'tunisia';
+                }
+            }
+            
+            // ===== АЛЖИР =====
+            for (let x = -6; x <= -2; x++) {
+                for (let y = 13; y <= 18; y++) {
+                    gridData[`${x},${y}`] = 'algeria';
+                }
+            }
+            
+            // ===== МАРОККО =====
+            for (let x = -10; x <= -6; x++) {
+                for (let y = 12; y <= 17; y++) {
+                    gridData[`${x},${y}`] = 'morocco';
+                }
+            }
+            
+            // ===== СЛОВАКИЯ =====
+            for (let x = 5; x <= 7; x++) {
+                for (let y = 2; y <= 3; y++) {
+                    gridData[`${x},${y}`] = 'slovakia';
+                }
+            }
+            
+            // ===== ЛЮКСЕМБУРГ =====
+            gridData['-3,-1'] = 'luxembourg';
+            gridData['-2,-1'] = 'luxembourg';
+            
+            // ===== ИСЛАНДИЯ =====
+            for (let x = -20; x <= -18; x++) {
+                for (let y = -10; y <= -8; y++) {
+                    gridData[`${x},${y}`] = 'iceland';
+                }
+            }
+            
+            // Добавим заводы и порты
+            randomFactories(12);
+            randomPorts(8);
+            
+            updateWorldBounds();
+            camera.x = 5 * CELL_SIZE;
+            camera.y = 5 * CELL_SIZE;
+            camera.zoom = 0.4;
+            render();
+            updateCountryPanel();
+            document.getElementById('status').innerHTML = `🌍 Карта Европы загружена | Клеток: ${Object.keys(gridData).length}`;
+        }
+        
+        // ============================================================
+        //  СОБЫТИЯ МЫШИ
+        // ============================================================
+        
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                isDrawing = true;
+                handleClick(e, false);
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDrawing) handlePaint(e);
+            const worldPos = screenToWorld(e.clientX, e.clientY);
+            if (worldPos.x !== undefined && worldPos.y !== undefined) {
+                updateInfoDisplay(worldPos.x, worldPos.y);
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => { isDrawing = false; });
+        
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            handleClick(e, true);
+        });
+        
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const before = screenToWorld(e.clientX, e.clientY);
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            camera.zoom = Math.min(Math.max(camera.zoom * delta, 0.1), 5);
+            const after = screenToWorld(e.clientX, e.clientY);
+            camera.x += (before.x - after.x) * CELL_SIZE;
+            camera.y += (before.y - after.y) * CELL_SIZE;
+            render();
+        }, { passive: false });
+        
+        // ============================================================
+        //  УПРАВЛЕНИЕ КАМЕРОЙ (WASD)
+        // ============================================================
+        
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (Object.keys(gridData).length > 0) {
+                    let sumX = 0, sumY = 0, count = 0;
+                    for (const pos of Object.keys(gridData)) {
+                        const [x, y] = pos.split(',').map(Number);
+                        sumX += x;
+                        sumY += y;
+                        count++;
+                    }
+                    camera.x = (sumX / count) * CELL_SIZE;
+                    camera.y = (sumY / count) * CELL_SIZE;
+                    render();
+                }
+            }
+        });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+        
+        function updateCamera() {
+            const speed = 15 / camera.zoom;
+            let moved = false;
+            if (keys['KeyW'] || keys['ArrowUp']) { camera.y -= speed; moved = true; }
+            if (keys['KeyS'] || keys['ArrowDown']) { camera.y += speed; moved = true; }
+            if (keys['KeyA'] || keys['ArrowLeft']) { camera.x -= speed; moved = true; }
+            if (keys['KeyD'] || keys['ArrowRight']) { camera.x += speed; moved = true; }
+            if (moved) render();
+            requestAnimationFrame(updateCamera);
+        }
+        updateCamera();
+        
+        // ============================================================
+        //  КНОПКИ ИНТЕРФЕЙСА
+        // ============================================================
+        
+        document.getElementById('btn-draw').onclick = () => setMode('draw');
+        document.getElementById('btn-erase').onclick = () => setMode('erase');
+        document.getElementById('btn-fill').onclick = () => setMode('fill');
+        
+        document.getElementById('btn-load').onclick = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        gridData = data.gridData || {};
+                        cellStats = data.cellStats || {};
+                        capitals = data.capitals || {};
+                        updateWorldBounds();
+                        
+                        if (Object.keys(gridData).length > 0) {
+                            let sumX = 0, sumY = 0, count = 0;
+                            for (const pos of Object.keys(gridData)) {
+                                const [x, y] = pos.split(',').map(Number);
+                                sumX += x;
+                                sumY += y;
+                                count++;
+                            }
+                            camera.x = (sumX / count) * CELL_SIZE;
+                            camera.y = (sumY / count) * CELL_SIZE;
+                            camera.zoom = 0.8;
+                        }
+                        
+                        render();
+                        updateCountryPanel();
+                        document.getElementById('status').innerHTML = `✅ Загружено! Клеток: ${Object.keys(gridData).length}`;
+                    } catch(err) {
+                        alert('Ошибка загрузки JSON: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        };
+        
+        document.getElementById('btn-export').onclick = () => {
+            const data = {
+                version: "4.0",
+                gridData,
+                cellStats,
+                capitals,
+                created: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'hoi5_map_europe.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            document.getElementById('status').innerHTML = `💾 Экспортировано! Клеток: ${Object.keys(gridData).length}`;
+        };
+
+        // ── Автосохранение ───────────────────────────────────────────────────
+        const AUTOSAVE_KEY = 'hoi5_editor_autosave';
+        let autosaveTimer = null;
+
+        function autoSave() {
+            try {
+                const data = { gridData, cellStats, capitals, version: "4.0", saved: Date.now() };
+                localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(data));
+            } catch(e) {}
+        }
+
+        function scheduleAutoSave() {
+            if (autosaveTimer) clearTimeout(autosaveTimer);
+            autosaveTimer = setTimeout(() => {
+                autoSave();
+                const count = Object.keys(gridData).length;
+                document.getElementById('status').innerHTML = `💾 Автосохранение (${count} клеток)`;
+            }, 3000);
+        }
+
+        function restoreAutoSave() {
+            try {
+                const raw = localStorage.getItem(AUTOSAVE_KEY);
+                if (!raw) { alert('Нет автосохранений!'); return; }
+                const data = JSON.parse(raw);
+                gridData = data.gridData || {};
+                cellStats = data.cellStats || {};
+                capitals = data.capitals || {};
+                updateWorldBounds();
+                if (Object.keys(gridData).length > 0) {
+                    let sumX = 0, sumY = 0, count = 0;
+                    for (const pos of Object.keys(gridData)) {
+                        const [x, y] = pos.split(',').map(Number);
+                        sumX += x; sumY += y; count++;
+                    }
+                    camera.x = (sumX / count) * CELL_SIZE;
+                    camera.y = (sumY / count) * CELL_SIZE;
+                    camera.zoom = 0.8;
+                }
+                render();
+                updateCountryPanel();
+                document.getElementById('status').innerHTML = `🔄 Восстановлено! Клеток: ${Object.keys(gridData).length}`;
+            } catch(e) { alert('Ошибка восстановления: ' + e.message); }
+        }
+
+        document.getElementById('btn-restore').onclick = () => {
+            if (confirm('Восстановить последнее автосохранение?')) restoreAutoSave();
+        };
+
+        setInterval(autoSave, 30000);
+        
+        document.getElementById('btn-random-factories').onclick = () => {
+            const density = parseInt(prompt('Плотность заводов (0-50%):', '15'));
+            if (isNaN(density) || density < 0 || density > 50) return;
+            const added = randomFactories(density);
+            document.getElementById('status').innerHTML = `🎲 Добавлено ${added} заводов (${density}%)`;
+        };
+        
+        document.getElementById('btn-random-ports').onclick = () => {
+            const density = parseInt(prompt('Плотность портов (0-30%):', '10'));
+            if (isNaN(density) || density < 0 || density > 30) return;
+            const added = randomPorts(density);
+            document.getElementById('status').innerHTML = `🎲 Добавлено ${added} портов (${density}%)`;
+        };
+        
+        document.getElementById('btn-clear').onclick = () => {
+            if (confirm('Очистить всю карту?')) {
+                gridData = {};
+                cellStats = {};
+                capitals = {};
+                localStorage.removeItem(AUTOSAVE_KEY);
+                updateWorldBounds();
+                render();
+                updateCountryPanel();
+                document.getElementById('status').innerHTML = '🗑️ Карта очищена';
+            }
+        };
+        
+        document.getElementById('btn-demo').onclick = () => {
+            if (confirm('Загрузить демо-карту?')) {
+                loadDemo();
+            }
+        };
+        
+        document.getElementById('btn-demo-europe').onclick = () => {
+            if (confirm('Загрузить полную карту Европы?')) {
+                loadDemoEurope();
+            }
+        };
+        
+        document.getElementById('btn-build-factory').onclick = () => {
+            document.getElementById('status').innerHTML = '🏭 Режим: Ctrl+ЛКМ по клетке — добавить завод';
+            setTimeout(() => {
+                document.getElementById('status').innerHTML = `⚡ Готов | Клеток: ${Object.keys(gridData).length}`;
+            }, 3000);
+        };
+        
+        document.getElementById('btn-build-port').onclick = () => {
+            document.getElementById('status').innerHTML = '⚓ Режим: Shift+ЛКМ по клетке — добавить порт';
+            setTimeout(() => {
+                document.getElementById('status').innerHTML = `⚡ Готов | Клеток: ${Object.keys(gridData).length}`;
+            }, 3000);
+        };
+        
+        document.getElementById('btn-remove-building').onclick = () => {
+            document.getElementById('status').innerHTML = '🗑️ Режим: Alt+ЛКМ по клетке — удалить постройку';
+            setTimeout(() => {
+                document.getElementById('status').innerHTML = `⚡ Готов | Клеток: ${Object.keys(gridData).length}`;
+            }, 3000);
+        };
+        
+        document.getElementById('btn-capital').onclick = () => {
+            capitalMode = !capitalMode;
+            document.getElementById('btn-capital').classList.toggle('active', capitalMode);
+            if (capitalMode) {
+                document.getElementById('status').innerHTML = '👑 Режим столицы: клик по клетке вашей страны — установить столицу';
+            } else {
+                document.getElementById('status').innerHTML = `⚡ Готов | Клеток: ${Object.keys(gridData).length}`;
+            }
+        };
+        
+        // ============================================================
+        //  СПИСОК СТРАН
+        // ============================================================
+        
+        const countryList = document.getElementById('country-list');
+        
+        function updateCountryPanel() {
+            countryList.innerHTML = '';
+            Object.entries(countries).forEach(([id, info]) => {
+                const btn = document.createElement('button');
+                btn.className = 'country-btn' + (id === selectedCountry ? ' selected' : '');
+                const crownIcon = capitals[id] ? '👑 ' : '';
+                btn.innerHTML = `<div class="color-preview" style="background:${info.color}"></div><span>${crownIcon}${info.name}</span>`;
+                btn.onclick = () => {
+                    selectedCountry = id;
+                    document.querySelectorAll('.country-btn').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    document.getElementById('status').innerHTML = `🎨 Выбрана: ${info.name}`;
+                };
+                countryList.appendChild(btn);
+                
+                if (info.shortcut) {
+                    window.addEventListener('keydown', (e) => {
+                        if (e.key === info.shortcut && !e.ctrlKey && !e.altKey) {
+                            selectedCountry = id;
+                            document.querySelectorAll('.country-btn').forEach(b => b.classList.remove('selected'));
+                            btn.classList.add('selected');
+                            document.getElementById('status').innerHTML = `🎨 Выбрана: ${info.name}`;
+                        }
+                    });
+                }
+            });
+        }
+        
+        updateCountryPanel();
+        
+        // ============================================================
+        //  ИНИЦИАЛИЗАЦИЯ
+        // ============================================================
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 50;
+            render();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Загружаем: автосохранение или демо
+        (function() {
+            try {
+                const raw = localStorage.getItem(AUTOSAVE_KEY);
+                if (raw) {
+                    const data = JSON.parse(raw);
+                    if (data.gridData && Object.keys(data.gridData).length > 0) {
+                        gridData = data.gridData;
+                        cellStats = data.cellStats || {};
+                        capitals = data.capitals || {};
+                        updateWorldBounds();
+                        let sumX = 0, sumY = 0, count = 0;
+                        for (const pos of Object.keys(gridData)) {
+                            const [x, y] = pos.split(',').map(Number);
+                            sumX += x; sumY += y; count++;
+                        }
+                        camera.x = (sumX / count) * CELL_SIZE;
+                        camera.y = (sumY / count) * CELL_SIZE;
+                        camera.zoom = 0.8;
+                        render();
+                        updateCountryPanel();
+                        document.getElementById('status').innerHTML = `🔄 Автосохранение загружено | Клеток: ${count}`;
+                        return;
+                    }
+                }
+            } catch(e) {}
+            loadDemo();
+        })();
+        
+        console.log('✅ HOI5 Map Editor v4.0 готов!');
+        console.log('📌 Управление:');
+        console.log('   ЛКМ — рисовать выбранной страной');
+        console.log('   ПКМ — стереть страну');
+        console.log('   Ctrl+ЛКМ — добавить завод 🏭');
+        console.log('   Shift+ЛКМ — добавить порт ⚓');
+        console.log('   Alt+ЛКМ — удалить постройку');
+        console.log('   WASD/Стрелки — камера');
+        console.log('   Колесо — зум');
+        console.log('   Пробел — центрировать на карте');
+    </script>
+</body>
+</html>

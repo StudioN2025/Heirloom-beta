@@ -95,7 +95,41 @@ export class DataLoader {
         }
         
         console.log(`✅ Загружено построек: ${factoriesLoaded} заводов, ${portsLoaded} портов`);
-        
+
+        // Автоматически добавляем порты на побережье (если их нет)
+        if (portsLoaded === 0) {
+            for (const posKey of Object.keys(gridData)) {
+                const [x, y] = posKey.split(',').map(Number);
+                if (this.isCoastal(x, y, gridData) && !world.hasBuilding(x, y, 'port')) {
+                    // Каждая 3-я прибрежная клетка получает порт
+                    if ((x + y) % 3 === 0) {
+                        world.addBuilding(x, y, 'port');
+                        portsLoaded++;
+                    }
+                }
+            }
+            console.log(`✅ Автоматически добавлено ${portsLoaded} портов`);
+        }
+
+        // Вода — всё что дальше 5 клеток от края карты
+        const MARGIN = 5;
+        for (let x = minX - MARGIN; x <= maxX + MARGIN; x++) {
+            for (let y = minY - MARGIN; y <= maxY + MARGIN; y++) {
+                if (!gridData[`${x},${y}`]) {
+                    world.setWater(x, y);
+                }
+            }
+        }
+        console.log(`✅ Водных клеток: ${world.waterCells.size}`);
+
+        // Загружаем столицы
+        if (data.capitals) {
+            for (const [cid, cap] of Object.entries(data.capitals)) {
+                world.setCapital(cid, cap.x, cap.y, cap.name);
+            }
+            console.log(`✅ Столицы: ${Object.keys(data.capitals).length}`);
+        }
+
         const totalCells = world.debugCheckCells();
         console.log(`✅ Карта загружена: ${total} клеток в JSON, ${totalCells} клеток в мире`);
         
