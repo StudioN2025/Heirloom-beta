@@ -201,11 +201,18 @@ export class NetworkManager {
     _handleData(fromPeerId, data) {
         if (!data || !data.type) return;
 
-        // СНАЧАЛА — синхронизация игрового состояния
-        if (window._networkSync && window._networkSync.handleMessage(fromPeerId, data)) {
-            return;
+        // ═══════════════════════════════════════════════════════════════════
+        // СНАЧАЛА — синхронизация игрового состояния (initial_state, day_tick, state_delta)
+        // ═══════════════════════════════════════════════════════════════════
+        if (window._networkSync && typeof window._networkSync.handleMessage === 'function') {
+            if (window._networkSync.handleMessage(fromPeerId, data)) {
+                return; // Сообщение обработано синхронизацией
+            }
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // Остальные сообщения (лобби, игровые действия, чат)
+        // ═══════════════════════════════════════════════════════════════════
         switch (data.type) {
             case 'welcome':
                 this.hostPlayerCountry = data.hostCountry;
