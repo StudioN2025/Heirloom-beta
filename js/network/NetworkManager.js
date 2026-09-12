@@ -1,5 +1,6 @@
 // NetworkManager.js — Сетевая игра через PeerJS (P2P)
 // Хост создаёт комнату, клиенты подключаются по Room ID.
+// Автоопределение HTTP/HTTPS: если игра по HTTPS — PeerServer тоже должен быть HTTPS.
 
 import { addNotification } from '../utils/helpers.js';
 
@@ -30,6 +31,15 @@ export class NetworkManager {
         this.onError = null;          // (err) => {}
     }
 
+    /**
+     * Определяет, использовать ли secure-подключение.
+     * Если игра открыта по HTTPS, PeerServer тоже должен быть HTTPS,
+     * иначе браузер заблокирует запрос (Mixed Content).
+     */
+    _isSecure() {
+        return window.location.protocol === 'https:';
+    }
+
     // ── ХОСТ: создать комнату ─────────────────────────────────────────────
 
     /**
@@ -43,6 +53,9 @@ export class NetworkManager {
 
         this.isHost = true;
 
+        const isHttps = this._isSecure();
+        console.log('[Net] Создание комнаты. Secure:', isHttps);
+
         return new Promise((resolve, reject) => {
             try {
                 this.peer = new Peer({
@@ -50,7 +63,7 @@ export class NetworkManager {
                     port: serverPort,
                     path: serverPath,
                     key: serverKey,
-                    secure: false,
+                    secure: isHttps,
                     debug: 1
                 });
             } catch (err) {
@@ -76,7 +89,9 @@ export class NetworkManager {
                 if (err.type === 'unavailable-id') {
                     reject(new Error('Этот ID уже занят. Попробуйте снова.'));
                 } else if (err.type === 'network' || err.type === 'server-error') {
-                    reject(new Error('Не удалось подключиться к PeerServer. Проверьте, что он запущен и IP верный.'));
+                    reject(new Error('Не удалось подключиться к PeerServer. Проверьте, что он запущен по HTTPS и IP верный.'));
+                } else if (err.type === 'ssl-unavailable') {
+                    reject(new Error('PeerServer не поддерживает HTTPS. Запустите сервер с флагами --ssl --sslkey --sslcert.'));
                 } else {
                     if (this.onError) this.onError(err);
                     reject(err);
@@ -126,6 +141,9 @@ export class NetworkManager {
         this.isHost = false;
         this.roomId = roomId;
 
+        const isHttps = this._isSecure();
+        console.log('[Net] Подключение к комнате. Secure:', isHttps);
+
         return new Promise((resolve, reject) => {
             try {
                 this.peer = new Peer({
@@ -133,7 +151,7 @@ export class NetworkManager {
                     port: serverPort,
                     path: serverPath,
                     key: serverKey,
-                    secure: false,
+                    secure: isHttps,
                     debug: 1
                 });
             } catch (err) {
@@ -183,7 +201,9 @@ export class NetworkManager {
                 if (err.type === 'peer-unavailable') {
                     reject(new Error('Комната не найдена. Проверьте Room ID.'));
                 } else if (err.type === 'network' || err.type === 'server-error') {
-                    reject(new Error('Не удалось подключиться к PeerServer.'));
+                    reject(new Error('Не удалось подключиться к PeerServer. Проверьте, что он запущен по HTTPS.'));
+                } else if (err.type === 'ssl-unavailable') {
+                    reject(new Error('PeerServer не поддерживает HTTPS. Запустите сервер с флагами --ssl.'));
                 } else {
                     if (this.onError) this.onError(err);
                     reject(err);
@@ -199,13 +219,11 @@ export class NetworkManager {
 
         switch (data.type) {
             case 'welcome':
-                // Клиент получил приветствие от хоста
                 this.hostPlayerCountry = data.hostCountry;
                 if (this.onGameStateReceived) this.onGameStateReceived(data);
                 break;
 
             case 'player_joined':
-                // Хост сообщает всем: новый игрок с такой-то страной
                 if (this.onPlayerJoined) this.onPlayerJoined(data.peerId, data.country);
                 break;
 
@@ -214,17 +232,14 @@ export class NetworkManager {
                 break;
 
             case 'action':
-                // Игрок выполнил действие (объявил войну, переместил юнита и т.д.)
                 if (this.onPlayerAction) this.onPlayerAction(fromPeerId, data.action);
                 break;
 
             case 'state_sync':
-                // Хост рассылает актуальное состояние
                 if (this.onGameStateReceived) this.onGameStateReceived(data.state);
                 break;
 
             case 'chat':
-                // Простой чат
                 addNotification('💬 ' + (data.from || '???') + ': ' + data.text, 'info');
                 break;
 
@@ -235,7 +250,6 @@ export class NetworkManager {
 
     /**
      * Отправить действие всем (кроме себя).
-     * Используется для синхронизации: игрок переместил юнита, объявил войну и т.д.
      */
     broadcastAction(action) {
         const msg = {
@@ -327,8 +341,6 @@ export class NetworkManager {
 
     applyState(state) {
         if (!state) return;
-        // Полное состояние применяем осторожно — только по явному запросу.
-        // В обычной игре действия синхронизируются точечно через broadcastAction.
         console.log('[Net] Получено состояние:', state);
     }
 }
