@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Heirloom — Глобальная Стратегия</title>
     <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=6.1">
+    <link rel="stylesheet" href="css/style.css?v=6.0">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 <body oncontextmenu="return false;">
@@ -18,7 +18,7 @@
         <button id="btn-network" class="hq-button" style="background:#1d4ed8;">🌐 СЕТЕВАЯ ИГРА</button>
         <button id="btn-settings" class="hq-button" style="background:#374151;">⚙️ НАСТРОЙКИ</button>
         <a href="https://t.me/studion2025" target="_blank" style="color:#eab308;text-decoration:none;font-size:12px;margin-top:8px;display:block;opacity:0.8;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">📱 Telegram канал</a>
-        <p class="version-text">Oberkommando — Simulation Module v4.1 (WebGL)</p>
+        <p class="version-text">Oberkommando — Simulation Module v4.0 (WebGL)</p>
     </div>
 </div>
 
@@ -166,16 +166,28 @@
     </div>
 </div>
 
-<!-- ═══════════════ СЕТЕВАЯ ИГРА ═══════════════ -->
+<!-- Сетевое меню -->
 <div id="network-modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1100;display:flex;align-items:center;justify-content:center;">
     <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;max-width:640px;width:90%;max-height:90vh;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.7);">
         <div id="network-content"></div>
     </div>
 </div>
 
-<!-- PeerJS для сетевой игры -->
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<!-- Лобби -->
+<div id="lobby-modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:1200;display:flex;align-items:center;justify-content:center;">
+    <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;width:900px;max-width:95vw;height:600px;max-height:90vh;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.7);">
+        <div id="lobby-content" style="height:100%;"></div>
+    </div>
+</div>
 
-<script type="module" src="js/main.js?v=39.0"></script>
+<!-- Выбор страны -->
+<div id="country-picker-modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1300;display:flex;align-items:center;justify-content:center;">
+    <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;width:640px;max-width:90vw;max-height:80vh;overflow:hidden;">
+        <div id="country-picker-content" style="max-height:80vh;overflow-y:auto;"></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module" src="js/main.js?v=40.0"></script>
 </body>
 </html>
