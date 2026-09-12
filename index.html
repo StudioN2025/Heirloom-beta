@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Heirloom — Глобальная Стратегия</title>
     <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=6.0">
+    <link rel="stylesheet" href="css/style.css?v=6.1">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 <body oncontextmenu="return false;">
@@ -15,13 +15,14 @@
         <h1>HEIRLOOM<br><span class="subtitle-main">STRATEGY</span></h1>
         <p class="subtitle">Grand Strategy Command</p>
         <button id="btn-play" class="hq-button">🗺️ НАЧАТЬ ИГРУ</button>
+        <button id="btn-network" class="hq-button" style="background:#1d4ed8;">🌐 СЕТЕВАЯ ИГРА</button>
         <button id="btn-settings" class="hq-button" style="background:#374151;">⚙️ НАСТРОЙКИ</button>
         <a href="https://t.me/studion2025" target="_blank" style="color:#eab308;text-decoration:none;font-size:12px;margin-top:8px;display:block;opacity:0.8;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">📱 Telegram канал</a>
-        <p class="version-text">Oberkommando — Simulation Module v4.0 (WebGL)</p>
+        <p class="version-text">Oberkommando — Simulation Module v4.1 (WebGL)</p>
     </div>
 </div>
 
-    <div id="settings-overlay" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1100;display:flex;align-items:center;justify-content:center;">
+<div id="settings-overlay" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:1100;display:flex;align-items:center;justify-content:center;">
     <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;padding:24px;max-width:420px;width:90%;">
         <h2 style="color:#eab308;text-align:center;margin-bottom:16px;">⚙️ НАСТРОЙКИ</h2>
 
@@ -143,7 +144,6 @@
     <div id="army-command-panel" class="hidden" style="position:fixed;z-index:300;background:#1f2937;border:2px solid #eab308;border-radius:8px;padding:8px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.5);pointer-events:auto;"></div>
     <div id="notifications"></div>
 
-    <!-- Тутор -->
     <div id="tutorial-overlay" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:500;display:flex;align-items:center;justify-content:center;">
         <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;padding:24px;max-width:500px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.5);">
             <div id="tutorial-icon" style="text-align:center;font-size:48px;margin-bottom:12px;">🎮</div>
@@ -157,7 +157,6 @@
         </div>
     </div>
 
-    <!-- Панель армий внизу (как в стратегиях) -->
     <div id="army-panel">
         <div id="army-panel-header">
             <span id="army-count">0 армий</span>
@@ -167,6 +166,16 @@
     </div>
 </div>
 
-    <script type="module" src="js/main.js?v=38.0"></script>
+<!-- ═══════════════ СЕТЕВАЯ ИГРА ═══════════════ -->
+<div id="network-modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:1100;display:flex;align-items:center;justify-content:center;">
+    <div style="background:#1f2937;border:2px solid #eab308;border-radius:12px;max-width:640px;width:90%;max-height:90vh;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.7);">
+        <div id="network-content"></div>
+    </div>
+</div>
+
+<!-- PeerJS для сетевой игры -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+<script type="module" src="js/main.js?v=39.0"></script>
 </body>
 </html>
