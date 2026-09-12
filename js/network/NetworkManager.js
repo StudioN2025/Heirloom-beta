@@ -1,5 +1,5 @@
 // NetworkManager.js — Сетевая игра через PeerJS (P2P)
-// Хост создаёт комнату, клиенты подключаются по Room ID.
+// Хост создаёт комнату, клиенты подключаются по короткому 5-значному Room ID.
 // Автоопределение HTTP/HTTPS: если игра по HTTPS — PeerServer тоже должен быть HTTPS.
 
 import { addNotification } from '../utils/helpers.js';
@@ -33,6 +33,14 @@ export class NetworkManager {
         return window.location.protocol === 'https:';
     }
 
+    // ─── Генерация короткого ID ──────────────────────────────────────────
+
+    _generateShortId() {
+        // 5-значный код: 10000..99999 (без ведущих нулей)
+        const num = Math.floor(10000 + Math.random() * 90000);
+        return String(num);
+    }
+
     // ── ХОСТ: создать комнату ─────────────────────────────────────────────
 
     createRoom(serverHost, serverPort, serverPath, serverKey) {
@@ -44,46 +52,91 @@ export class NetworkManager {
         console.log('[Net] Создание комнаты. Secure:', isHttps);
 
         return new Promise((resolve, reject) => {
-            try {
-                this.peer = new Peer({
-                    host: serverHost,
-                    port: serverPort,
-                    path: serverPath,
-                    key: serverKey,
-                    secure: isHttps,
-                    debug: 1
-                });
-            } catch (err) {
-                reject(new Error('PeerJS не загружен. Проверьте подключение к интернету.'));
-                return;
-            }
+            let attempt = 0;
+            const MAX_ATTEMPTS = 10;
 
-            this.peer.on('open', (id) => {
-                this.myPeerId = id;
-                this.roomId = id;
-                console.log('[Net] Комната создана, ID:', id);
-                addNotification('🌐 Комната создана. ID: ' + id, 'info');
-                if (this.onConnected) this.onConnected();
-                resolve(id);
-            });
+            const tryCreate = () => {
+                attempt++;
+                const roomId = this._generateShortId();
 
-            this.peer.on('connection', (conn) => {
-                this._handleIncomingConnection(conn);
-            });
+                console.log('[Net] Попытка создать комнату с ID:', roomId, '(попытка', attempt, ')');
 
-            this.peer.on('error', (err) => {
-                console.error('[Net] Ошибка peer:', err);
-                if (err.type === 'unavailable-id') {
-                    reject(new Error('Этот ID уже занят. Попробуйте снова.'));
-                } else if (err.type === 'network' || err.type === 'server-error') {
-                    reject(new Error('Не удалось подключиться к PeerServer. Проверьте, что он запущен по HTTPS и IP верный.'));
-                } else if (err.type === 'ssl-unavailable') {
-                    reject(new Error('PeerServer не поддерживает HTTPS. Запустите сервер с флагами --ssl --sslkey --sslcert.'));
-                } else {
+                try {
+                    this.peer = new Peer(roomId, {
+                        host: serverHost,
+                        port: serverPort,
+                        path: serverPath,
+                        key: serverKey,
+                        secure: isHttps,
+                        debug: 1
+                    });
+                } catch (err) {
+                    reject(new Error('PeerJS не загружен. Проверьте подключение к интернету.'));
+                    return;
+                }
+
+                const onError = (err) => {
+                    console.warn('[Net] Ошибка при создании комнаты:', err.type);
+
+                    if (err.type === 'unavailable-id') {
+                        // ID занят — пробуем другой
+                        if (this.peer) {
+                            try { this.peer.destroy(); } catch (e) {}
+                            this.peer = null;
+                        }
+
+                        if (attempt < MAX_ATTEMPTS) {
+                            setTimeout(tryCreate, 200);
+                            return;
+                        }
+
+                        reject(new Error('Не удалось создать комнату: все ID заняты. Попробуйте ещё раз.'));
+                        return;
+                    }
+
+                    if (err.type === 'network' || err.type === 'server-error') {
+                        reject(new Error('Не удалось подключиться к PeerServer. Проверьте, что он запущен по HTTPS и IP верный.'));
+                        return;
+                    }
+
+                    if (err.type === 'ssl-unavailable') {
+                        reject(new Error('PeerServer не поддерживает HTTPS. Запустите сервер с флагами --ssl --sslkey --sslcert.'));
+                        return;
+                    }
+
                     if (this.onError) this.onError(err);
                     reject(err);
-                }
-            });
+                };
+
+                this.peer.on('error', onError);
+
+                this.peer.on('open', (id) => {
+                    this.myPeerId = id;
+                    this.roomId = id;
+                    console.log('[Net] Комната создана, ID:', id);
+
+                    // Убираем обработчик ошибок "до открытия"
+                    this.peer.off('error', onError);
+
+                    addNotification('🌐 Комната создана. ID: ' + id, 'info');
+
+                    // Обработка новых подключений
+                    this.peer.on('connection', (conn) => {
+                        this._handleIncomingConnection(conn);
+                    });
+
+                    // Обработка ошибок "после открытия"
+                    this.peer.on('error', (err) => {
+                        console.error('[Net] Ошибка peer (после открытия):', err);
+                        if (this.onError) this.onError(err);
+                    });
+
+                    if (this.onConnected) this.onConnected();
+                    resolve(id);
+                });
+            };
+
+            tryCreate();
         });
     }
 
@@ -127,7 +180,7 @@ export class NetworkManager {
         this.roomId = roomId;
 
         const isHttps = this._isSecure();
-        console.log('[Net] Подключение к комнате. Secure:', isHttps);
+        console.log('[Net] Подключение к комнате. Secure:', isHttps, 'Room ID:', roomId);
 
         return new Promise((resolve, reject) => {
             try {
@@ -202,16 +255,17 @@ export class NetworkManager {
         if (!data || !data.type) return;
 
         // ═══════════════════════════════════════════════════════════════════
-        // СНАЧАЛА — синхронизация игрового состояния (initial_state, day_tick, state_delta)
+        // СНАЧАЛА — синхронизация игрового состояния
+        // (initial_state, day_tick, state_delta)
         // ═══════════════════════════════════════════════════════════════════
         if (window._networkSync && typeof window._networkSync.handleMessage === 'function') {
             if (window._networkSync.handleMessage(fromPeerId, data)) {
-                return; // Сообщение обработано синхронизацией
+                return;
             }
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // Остальные сообщения (лобби, игровые действия, чат)
+        // Остальные сообщения (лобби, действия, чат)
         // ═══════════════════════════════════════════════════════════════════
         switch (data.type) {
             case 'welcome':
