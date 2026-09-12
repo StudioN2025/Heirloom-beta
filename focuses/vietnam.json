@@ -1,0 +1,10 @@
+{
+    "Vietnam": {
+        "Focuses": [
+            {"name": "French Indochina", "icon": "⭐", "effects": ["Укрепление колониальной власти"], "requirements": []},
+            {"name": "Rice Production", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["French Indochina"]},
+            {"name": "Form Militia", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["French Indochina"]},
+            {"name": "National Liberation", "icon": "⭐", "effects": ["Освобождение Вьетнама"], "requirements": ["Rice Production", "Form Militia"]}
+        ]
+    }
+}

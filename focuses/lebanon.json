@@ -1,0 +1,10 @@
+{
+    "Lebanon": {
+        "Focuses": [
+            {"name": "French Mandate", "icon": "⭐", "effects": ["Французский мандат"], "requirements": []},
+            {"name": "Beirut Trade Hub", "icon": "🏭", "effects": ["+2 завода"], "requirements": ["French Mandate"]},
+            {"name": "Lebanese Legion", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["French Mandate"]},
+            {"name": "Independence", "icon": "⭐", "effects": ["Независимость"], "requirements": ["Beirut Trade Hub", "Lebanese Legion"]}
+        ]
+    }
+}

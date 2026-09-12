@@ -1,0 +1,10 @@
+{
+    "Israel": {
+        "Focuses": [
+            {"name": "Yishuv Settlement", "icon": "⭐", "effects": ["Строительство поселений"], "requirements": []},
+            {"name": "Industrial Base", "icon": "🏭", "effects": ["+2 завода"], "requirements": ["Yishuv Settlement"]},
+            {"name": "Haganah Formation", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Yishuv Settlement"]},
+            {"name": "Declaration of State", "icon": "⭐", "effects": ["Провозглашение государства"], "requirements": ["Industrial Base", "Haganah Formation"]}
+        ]
+    }
+}

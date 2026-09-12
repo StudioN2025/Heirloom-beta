@@ -1,0 +1,10 @@
+{
+    "Yunnan_Tree": {
+        "Focuses": [
+            {"name": "Власть Лунь Юня", "requirements": [], "effects": ["infantry:2", "equipment:400"], "branches_to": ["Независимость", "Промышленность"]},
+            {"name": "Независимость", "requirements": ["Власть Лунь Юня"], "effects": ["infantry:3"], "branches_to": ["Оборона"]},
+            {"name": "Промышленность", "requirements": ["Власть Лунь Юня"], "effects": ["factories:3"], "branches_to": ["Оборона"]},
+            {"name": "Оборона", "requirements": ["Независимость", "Промышленность"], "effects": ["infantry:5", "equipment:800"], "branches_to": []}
+        ]
+    }
+}

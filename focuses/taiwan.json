@@ -1,0 +1,10 @@
+{
+    "Taiwan": {
+        "Focuses": [
+            {"name": "Defend the Island", "icon": "⭐", "effects": ["Укрепление обороны"], "requirements": []},
+            {"name": "Develop Infrastructure", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Defend the Island"]},
+            {"name": "Naval Expansion", "icon": "⚓", "effects": ["+1 порт"], "requirements": ["Defend the Island"]},
+            {"name": "Strategic Fortification", "icon": "⭐", "effects": ["+2 дивизии"], "requirements": ["Develop Infrastructure", "Naval Expansion"]}
+        ]
+    }
+}

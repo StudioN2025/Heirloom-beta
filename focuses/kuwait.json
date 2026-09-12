@@ -1,0 +1,10 @@
+{
+    "Kuwait": {
+        "Focuses": [
+            {"name": "Sheikhdom", "icon": "⭐", "effects": ["Укрепление шейхства"], "requirements": []},
+            {"name": "Pearl Diving", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Sheikhdom"]},
+            {"name": "Port Guard", "icon": "⚓", "effects": ["+1 порт"], "requirements": ["Sheikhdom"]},
+            {"name": "Oil Exploration", "icon": "⭐", "effects": ["+2 завода"], "requirements": ["Pearl Diving", "Port Guard"]}
+        ]
+    }
+}

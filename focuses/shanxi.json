@@ -1,0 +1,10 @@
+{
+    "Shanxi_Tree": {
+        "Focuses": [
+            {"name": "Власть Янь Сишаня", "requirements": [], "effects": ["infantry:3", "equipment:500"], "branches_to": ["Индустриализация", "Армия"]},
+            {"name": "Индустриализация", "requirements": ["Власть Янь Сишаня"], "effects": ["factories:4"], "branches_to": ["Независимость"]},
+            {"name": "Армия", "requirements": ["Власть Янь Сишаня"], "effects": ["infantry:4", "tanks:1"], "branches_to": ["Независимость"]},
+            {"name": "Независимость", "requirements": ["Индустриализация", "Армия"], "effects": ["infantry:5", "equipment:1000"], "branches_to": []}
+        ]
+    }
+}

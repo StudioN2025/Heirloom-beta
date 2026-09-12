@@ -1,0 +1,42 @@
+{
+    "CCP_Tree": {
+        "Focuses": [
+            {"name": "Долгий марш", "requirements": [], "effects": ["infantry:3", "equipment:400"], "branches_to": ["Партизанская война", "База в Яньане"]},
+            {"name": "Партизанская война", "requirements": ["Долгий марш"], "effects": ["infantry:4"], "branches_to": ["Народная война"]},
+            {"name": "База в Яньане", "requirements": ["Долгий марш"], "effects": ["factories:2", "equipment:600"], "branches_to": ["Народная война"]},
+            {"name": "Народная война", "requirements": ["Партизанская война", "База в Яньане"], "effects": ["infantry:6", "manpower:10000", "equipment:1500"], "branches_to": []}
+        ]
+    },
+    "Ma_Clique_Tree": {
+        "Focuses": [
+            {"name": "Власть Ма Буфаня", "requirements": [], "effects": ["infantry:2", "equipment:300"], "branches_to": ["Укрепление границ", "Ислам"]},
+            {"name": "Укрепление границ", "requirements": ["Власть Ма Буфаня"], "effects": ["infantry:3"], "branches_to": ["Сопротивление"]},
+            {"name": "Ислам", "requirements": ["Власть Ма Буфаня"], "effects": ["manpower:5000"], "branches_to": ["Сопротивление"]},
+            {"name": "Сопротивление", "requirements": ["Укрепление границ", "Ислам"], "effects": ["infantry:4", "equipment:1000"], "branches_to": []}
+        ]
+    },
+    "Yunnan_Tree": {
+        "Focuses": [
+            {"name": "Власть Лунь Юня", "requirements": [], "effects": ["infantry:2", "equipment:400"], "branches_to": ["Независимость", "Промышленность"]},
+            {"name": "Независимость", "requirements": ["Власть Лунь Юня"], "effects": ["infantry:3"], "branches_to": ["Оборона"]},
+            {"name": "Промышленность", "requirements": ["Власть Лунь Юня"], "effects": ["factories:3"], "branches_to": ["Оборона"]},
+            {"name": "Оборона", "requirements": ["Независимость", "Промышленность"], "effects": ["infantry:5", "equipment:800"], "branches_to": []}
+        ]
+    },
+    "Guangxi_Tree": {
+        "Focuses": [
+            {"name": "Новая Гуансийская клика", "requirements": [], "effects": ["infantry:3", "equipment:500"], "branches_to": ["Военная реформа", "Экономика"]},
+            {"name": "Военная реформа", "requirements": ["Новая Гуансийская клика"], "effects": ["tanks:2", "infantry:3"], "branches_to": ["Независимость"]},
+            {"name": "Экономика", "requirements": ["Новая Гуансийская клика"], "effects": ["factories:3"], "branches_to": ["Независимость"]},
+            {"name": "Независимость", "requirements": ["Военная реформа", "Экономика"], "effects": ["infantry:5", "equipment:1200"], "branches_to": []}
+        ]
+    },
+    "Shanxi_Tree": {
+        "Focuses": [
+            {"name": "Власть Янь Сишаня", "requirements": [], "effects": ["infantry:3", "equipment:500"], "branches_to": ["Индустриализация", "Армия"]},
+            {"name": "Индустриализация", "requirements": ["Власть Янь Сишаня"], "effects": ["factories:4"], "branches_to": ["Независимость"]},
+            {"name": "Армия", "requirements": ["Власть Янь Сишаня"], "effects": ["infantry:4", "tanks:1"], "branches_to": ["Независимость"]},
+            {"name": "Независимость", "requirements": ["Индустриализация", "Армия"], "effects": ["infantry:5", "equipment:1000"], "branches_to": []}
+        ]
+    }
+}

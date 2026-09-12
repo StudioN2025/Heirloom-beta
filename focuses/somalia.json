@@ -1,0 +1,10 @@
+{
+    "Somalia": {
+        "Focuses": [
+            {"name": "Italian Somaliland", "icon": "⭐", "effects": ["Итальянская колония"], "requirements": []},
+            {"name": "Livestock Economy", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Italian Somaliland"]},
+            {"name": "Desert Scouts", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Italian Somaliland"]},
+            {"name": "Independence", "icon": "⭐", "effects": ["Независимость"], "requirements": ["Livestock Economy", "Desert Scouts"]}
+        ]
+    }
+}

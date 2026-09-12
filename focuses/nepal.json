@@ -1,0 +1,10 @@
+{
+    "Nepal": {
+        "Focuses": [
+            {"name": "Rana Dynasty", "icon": "⭐", "effects": ["Управление Рана"], "requirements": []},
+            {"name": "Hill Fortifications", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Rana Dynasty"]},
+            {"name": "Gurkha Warriors", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Rana Dynasty"]},
+            {"name": "Modernize Nepal", "icon": "⭐", "effects": ["+1 завод", "+1 дивизия"], "requirements": ["Hill Fortifications", "Gurkha Warriors"]}
+        ]
+    }
+}

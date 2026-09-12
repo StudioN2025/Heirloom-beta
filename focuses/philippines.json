@@ -1,0 +1,10 @@
+{
+    "Philippines": {
+        "Focuses": [
+            {"name": "Commonwealth Status", "icon": "⭐", "effects": ["Развитие самоуправления"], "requirements": []},
+            {"name": "Industrial Growth", "icon": "🏭", "effects": ["+2 завода"], "requirements": ["Commonwealth Status"]},
+            {"name": "Military Training", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Commonwealth Status"]},
+            {"name": "Prepare for War", "icon": "⭐", "effects": ["+3 дивизии", "+500 снаряжения"], "requirements": ["Industrial Growth", "Military Training"]}
+        ]
+    }
+}

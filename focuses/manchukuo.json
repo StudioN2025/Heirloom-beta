@@ -1,0 +1,10 @@
+{
+    "Manchukuo": {
+        "Focuses": [
+            {"name": "Japanese Influence", "icon": "⭐", "effects": ["Укрепление связей с Японией"], "requirements": []},
+            {"name": "Industrialization", "icon": "🏭", "effects": ["+2 завода"], "requirements": ["Japanese Influence"]},
+            {"name": "Army Modernization", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Japanese Influence"]},
+            {"name": "Expand Puppet State", "icon": "⭐", "effects": ["Присоединение территории"], "requirements": ["Industrialization", "Army Modernization"]}
+        ]
+    }
+}

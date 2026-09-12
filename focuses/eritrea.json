@@ -1,0 +1,10 @@
+{
+    "Eritrea": {
+        "Focuses": [
+            {"name": "Italian Colony", "icon": "⭐", "effects": ["Итальянская колония"], "requirements": []},
+            {"name": "Port of Massawa", "icon": "⚓", "effects": ["+1 порт"], "requirements": ["Italian Colony"]},
+            {"name": "Askari Regiments", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Italian Colony"]},
+            {"name": "Self-Determination", "icon": "⭐", "effects": ["Самоопределение"], "requirements": ["Port of Massawa", "Askari Regiments"]}
+        ]
+    }
+}

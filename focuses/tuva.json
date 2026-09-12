@@ -1,0 +1,10 @@
+{
+    "Tuva_Tree": {
+        "Focuses": [
+            {"name": "Тувинская революция", "requirements": [], "effects": ["equipment:500"], "branches_to": ["Укрепление границ", "Советское влияние"]},
+            {"name": "Укрепление границ", "requirements": ["Тувинская революция"], "effects": ["infantry:2"], "branches_to": ["Военная мощь"]},
+            {"name": "Советское влияние", "requirements": ["Тувинская революция"], "effects": ["allies:ussr"], "branches_to": ["Военная мощь"]},
+            {"name": "Военная мощь", "requirements": ["Укрепление границ", "Советское влияние"], "effects": ["tanks:2", "equipment:800"], "branches_to": []}
+        ]
+    }
+}

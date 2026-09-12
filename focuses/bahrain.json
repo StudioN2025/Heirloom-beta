@@ -1,0 +1,10 @@
+{
+    "Bahrain": {
+        "Focuses": [
+            {"name": "Pearl Coast", "icon": "⭐", "effects": ["Развитие жемчужного промысла"], "requirements": []},
+            {"name": "Port Infrastructure", "icon": "⚓", "effects": ["+1 порт"], "requirements": ["Pearl Coast"]},
+            {"name": "Island Defense", "icon": "💂", "effects": ["+1 дивизия"], "requirements": ["Pearl Coast"]},
+            {"name": "Develop Economy", "icon": "⭐", "effects": ["+1 завод"], "requirements": ["Port Infrastructure", "Island Defense"]}
+        ]
+    }
+}

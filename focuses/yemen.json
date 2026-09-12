@@ -1,0 +1,10 @@
+{
+    "Yemen": {
+        "Focuses": [
+            {"name": "Imamate Rule", "icon": "⭐", "effects": ["Имаматское правление"], "requirements": []},
+            {"name": "Coffee Trade", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Imamate Rule"]},
+            {"name": "Tribal Levies", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Imamate Rule"]},
+            {"name": "Unite Yemen", "icon": "⭐", "effects": ["Объединение Йемена"], "requirements": ["Coffee Trade", "Tribal Levies"]}
+        ]
+    }
+}

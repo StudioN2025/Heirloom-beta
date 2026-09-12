@@ -1,0 +1,10 @@
+{
+    "Bhutan": {
+        "Focuses": [
+            {"name": "Dragon Kingdom", "icon": "⭐", "effects": ["Укрепление монархии"], "requirements": []},
+            {"name": "Mountain Defense", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Dragon Kingdom"]},
+            {"name": "Royal Guard", "icon": "💂", "effects": ["+1 дивизия"], "requirements": ["Dragon Kingdom"]},
+            {"name": "Isolate Nation", "icon": "⭐", "effects": ["Укрепление границ"], "requirements": ["Mountain Defense", "Royal Guard"]}
+        ]
+    }
+}

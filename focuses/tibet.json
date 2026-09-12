@@ -1,0 +1,10 @@
+{
+    "Tibet_Tree": {
+        "Focuses": [
+            {"name": "Независимость Тибета", "requirements": [], "effects": ["equipment:300"], "branches_to": ["Духовная власть", "Укрепление"]},
+            {"name": "Духовная власть", "requirements": ["Независимость Тибета"], "effects": ["manpower:5000"], "branches_to": ["Оборона"]},
+            {"name": "Укрепление", "requirements": ["Независимость Тибета"], "effects": ["infantry:2"], "branches_to": ["Оборона"]},
+            {"name": "Оборона", "requirements": ["Духовная власть", "Укрепление"], "effects": ["infantry:3", "equipment:500"], "branches_to": []}
+        ]
+    }
+}

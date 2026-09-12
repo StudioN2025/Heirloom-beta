@@ -1,0 +1,10 @@
+{
+    "Sinkiang_Tree": {
+        "Focuses": [
+            {"name": "Синьцзянская автономия", "requirements": [], "effects": ["equipment:400"], "branches_to": ["Укрепление границ", "Торговля"]},
+            {"name": "Укрепление границ", "requirements": ["Синьцзянская автономия"], "effects": ["infantry:2"], "branches_to": ["Независимость"]},
+            {"name": "Торговля", "requirements": ["Синьцзянская автономия"], "effects": ["factories:2"], "branches_to": ["Независимость"]},
+            {"name": "Независимость", "requirements": ["Укрепление границ", "Торговля"], "effects": ["infantry:4", "equipment:1000"], "branches_to": []}
+        ]
+    }
+}

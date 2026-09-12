@@ -1,0 +1,10 @@
+{
+    "Malaya": {
+        "Focuses": [
+            {"name": "British Malaya", "icon": "⭐", "effects": ["Британская колония"], "requirements": []},
+            {"name": "Rubber Plantations", "icon": "🏭", "effects": ["+2 завода"], "requirements": ["British Malaya"]},
+            {"name": "Form Defense Force", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["British Malaya"]},
+            {"name": "Self-Governance", "icon": "⭐", "effects": ["Самоуправление"], "requirements": ["Rubber Plantations", "Form Defense Force"]}
+        ]
+    }
+}

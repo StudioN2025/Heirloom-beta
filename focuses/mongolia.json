@@ -1,0 +1,10 @@
+{
+    "Mongolia_Tree": {
+        "Focuses": [
+            {"name": "Народная революция", "requirements": [], "effects": ["equipment:600"], "branches_to": ["Советский союз", "Независимость"]},
+            {"name": "Советский союз", "requirements": ["Народная революция"], "effects": ["allies:ussr", "tanks:2"], "branches_to": ["Полная интеграция"]},
+            {"name": "Независимость", "requirements": ["Народная революция"], "effects": ["infantry:3", "factories:2"], "branches_to": ["Полная интеграция"]},
+            {"name": "Полная интеграция", "requirements": ["Советский союз", "Независимость"], "effects": ["infantry:5", "tanks:3", "equipment:2000"], "branches_to": []}
+        ]
+    }
+}

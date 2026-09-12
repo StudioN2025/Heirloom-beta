@@ -1,0 +1,10 @@
+{
+    "Ethiopia": {
+        "Focuses": [
+            {"name": "Solomonic Dynasty", "icon": "⭐", "effects": ["Династия Соломона"], "requirements": []},
+            {"name": "Coffee Trade", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Solomonic Dynasty"]},
+            {"name": "Empire Army", "icon": "💂", "effects": ["+3 дивизии"], "requirements": ["Solomonic Dynasty"]},
+            {"name": "Modernize Empire", "icon": "⭐", "effects": ["+1 завод", "+1 дивизия"], "requirements": ["Coffee Trade", "Empire Army"]}
+        ]
+    }
+}

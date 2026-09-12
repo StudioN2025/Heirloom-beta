@@ -1,0 +1,48 @@
+{
+    "Albania_Tree": {
+        "Focuses": [
+            {
+                "name": "Независимость Албании",
+                "requirements": [],
+                "effects": ["equipment:500"],
+                "branches_to": ["Укрепление границ", "Экономика Албании"]
+            },
+            {
+                "name": "Укрепление границ",
+                "requirements": ["Независимость Албании"],
+                "effects": ["infantry:2"],
+                "branches_to": ["Армия короля"]
+            },
+            {
+                "name": "Экономика Албании",
+                "requirements": ["Независимость Албании"],
+                "effects": ["factories:2", "manpower:2000"],
+                "branches_to": ["Итальянское влияние"]
+            },
+            {
+                "name": "Армия короля",
+                "requirements": ["Укрепление границ"],
+                "effects": ["infantry:3", "equipment:500"],
+                "branches_to": ["Сопротивление"]
+            },
+            {
+                "name": "Итальянское влияние",
+                "requirements": ["Экономика Албании"],
+                "effects": ["allies:italy"],
+                "branches_to": ["Итальянский протекторат"]
+            },
+            {
+                "name": "Сопротивление",
+                "requirements": ["Армия короля"],
+                "effects": ["infantry:5", "equipment:1000"],
+                "branches_to": []
+            },
+            {
+                "name": "Итальянский протекторат",
+                "requirements": ["Итальянское влияние"],
+                "effects": ["factories:3", "equipment:1000"],
+                "branches_to": []
+            }
+        ]
+    }
+}

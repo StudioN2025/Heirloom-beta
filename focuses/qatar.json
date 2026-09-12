@@ -1,0 +1,10 @@
+{
+    "Qatar": {
+        "Focuses": [
+            {"name": "Al Thani Rule", "icon": "⭐", "effects": ["Правление Аль Тани"], "requirements": []},
+            {"name": "Fishing Industry", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Al Thani Rule"]},
+            {"name": "Desert Warriors", "icon": "💂", "effects": ["+1 дивизия"], "requirements": ["Al Thani Rule"]},
+            {"name": "Trade Routes", "icon": "⭐", "effects": ["+1 порт"], "requirements": ["Fishing Industry", "Desert Warriors"]}
+        ]
+    }
+}

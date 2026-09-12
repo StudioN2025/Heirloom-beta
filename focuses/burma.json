@@ -1,0 +1,10 @@
+{
+    "Burma": {
+        "Focuses": [
+            {"name": "Colonial Administration", "icon": "⭐", "effects": ["Развитие колониальной экономики"], "requirements": []},
+            {"name": "Build Railways", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Colonial Administration"]},
+            {"name": "Raise Troops", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Colonial Administration"]},
+            {"name": "Independence", "icon": "⭐", "effects": ["Независимость"], "requirements": ["Build Railways", "Raise Troops"]}
+        ]
+    }
+}

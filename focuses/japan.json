@@ -1,0 +1,115 @@
+{
+  "Japan_Historical_Tree": {
+    "Focuses": [
+      {
+        "name": "Восхождение империи",
+        "requirements": [],
+        "effects": [
+          "+20% промышленной мощи",
+          "Разблокировка военных заводов"
+        ],
+        "effect": {
+          "factories": 2,
+          "infantry": 3,
+          "equipment": 500
+        },
+        "branches_to": ["ПолитикаGreater East Asia", "Военная экспансия"]
+      },
+      {
+        "name": "Политика Greater East Asia",
+        "requirements": ["Восхождение империи"],
+        "effects": [
+          "+15% дипломатического влияния в Азии",
+          "Усиление союзников"
+        ],
+        "effect": {
+          "factories": 1,
+          "infantry": 2,
+          "equipment": 300
+        },
+        "branches_to": ["Сфера процветания"]
+      },
+      {
+        "name": "Военная экспансия",
+        "requirements": ["Восхождение империи"],
+        "effects": [
+          "+25% армейской подготовки",
+          "+10% к атаке"
+        ],
+        "effect": {
+          "infantry": 4,
+          "tanks": 2,
+          "equipment": 1000
+        },
+        "branches_to": ["Война в Тихом океане"]
+      },
+      {
+        "name": "Сфера процветания",
+        "requirements": ["Политика Greater East Asia"],
+        "effects": [
+          "+30% экономики",
+          "Контроль над ресурсами"
+        ],
+        "effect": {
+          "factories": 4,
+          "equipment": 800
+        },
+        "branches_to": ["Великая Восточно-Азиатская сфера"]
+      },
+      {
+        "name": "Война в Тихом океане",
+        "requirements": ["Военная экспансия"],
+        "effects": [
+          "Нападение на США и союзников",
+          "+20% флота"
+        ],
+        "effect": {
+          "war": "usa",
+          "infantry": 5,
+          "equipment": 2000
+        },
+        "branches_to": ["Битва за Пёрл-Харбор"]
+      },
+      {
+        "name": "Великая Восточно-Азиатская сфера",
+        "requirements": ["Сфера процветания"],
+        "effects": [
+          "+50% экономики",
+          "Контроль над Азией"
+        ],
+        "effect": {
+          "factories": 6,
+          "infantry": 3,
+          "manpower": 5000
+        },
+        "branches_to": []
+      },
+      {
+        "name": "Битва за Пёрл-Харбор",
+        "requirements": ["Война в Тихом океане"],
+        "effects": [
+          "Уничтожение американского флота",
+          "+30% к атаке на 60 дней"
+        ],
+        "effect": {
+          "infantry": 3,
+          "equipment": 1500
+        },
+        "branches_to": ["Стратегическое отступление"]
+      },
+      {
+        "name": "Стратегическое отступление",
+        "requirements": ["Битва за Пёрл-Харбор"],
+        "effects": [
+          "Оборонительная война",
+          "+25% защиты"
+        ],
+        "effect": {
+          "infantry": 2,
+          "equipment": -500
+        },
+        "branches_to": []
+      }
+    ]
+  }
+}

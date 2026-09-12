@@ -1,0 +1,10 @@
+{
+    "Sudan": {
+        "Focuses": [
+            {"name": "Anglo-Egyptian Sudan", "icon": "⭐", "effects": ["Англо-египетское управление"], "requirements": []},
+            {"name": "Cotton Economy", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Anglo-Egyptian Sudan"]},
+            {"name": "Raise Levies", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Anglo-Egyptian Sudan"]},
+            {"name": "Self-Governance", "icon": "⭐", "effects": ["Самоуправление"], "requirements": ["Cotton Economy", "Raise Levies"]}
+        ]
+    }
+}

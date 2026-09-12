@@ -1,0 +1,10 @@
+{
+    "Indonesia": {
+        "Focuses": [
+            {"name": "Dutch East Indies", "icon": "⭐", "effects": ["Колониальное управление"], "requirements": []},
+            {"name": "Oil Industry", "icon": "🏭", "effects": ["+3 завода"], "requirements": ["Dutch East Indies"]},
+            {"name": "Form Militia", "icon": "💂", "effects": ["+2 дивизии"], "requirements": ["Dutch East Indies"]},
+            {"name": "National Revolution", "icon": "⭐", "effects": ["Революция в Индонезии"], "requirements": ["Oil Industry", "Form Militia"]}
+        ]
+    }
+}

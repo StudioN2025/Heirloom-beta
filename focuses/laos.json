@@ -1,0 +1,10 @@
+{
+    "Laos": {
+        "Focuses": [
+            {"name": "Royal Governance", "icon": "⭐", "effects": ["Укрепление монархии"], "requirements": []},
+            {"name": "Develop Agriculture", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Royal Governance"]},
+            {"name": "Create Defense Forces", "icon": "💂", "effects": ["+1 дивизия"], "requirements": ["Royal Governance"]},
+            {"name": "Modernize Kingdom", "icon": "⭐", "effects": ["+1 завод", "+1 дивизия"], "requirements": ["Develop Agriculture", "Create Defense Forces"]}
+        ]
+    }
+}

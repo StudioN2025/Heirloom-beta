@@ -1,0 +1,10 @@
+{
+    "Oman": {
+        "Focuses": [
+            {"name": "Sultanate Power", "icon": "⭐", "effects": ["Укрепление султаната"], "requirements": []},
+            {"name": "Port Development", "icon": "⚓", "effects": ["+1 порт"], "requirements": ["Sultanate Power"]},
+            {"name": "Desert Patrol", "icon": "💂", "effects": ["+1 дивизия"], "requirements": ["Sultanate Power"]},
+            {"name": "Modernize Oman", "icon": "⭐", "effects": ["+1 завод"], "requirements": ["Port Development", "Desert Patrol"]}
+        ]
+    }
+}

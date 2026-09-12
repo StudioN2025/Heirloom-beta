@@ -1,0 +1,10 @@
+{
+    "Korea": {
+        "Focuses": [
+            {"name": "Independence Movement", "icon": "⭐", "effects": ["Борьба за независимость"], "requirements": []},
+            {"name": "Modernize Economy", "icon": "🏭", "effects": ["+2 завода"], "requirements": ["Independence Movement"]},
+            {"name": "Build Armed Forces", "icon": "💂", "effects": ["+3 дивизии"], "requirements": ["Independence Movement"]},
+            {"name": "Unify Korea", "icon": "⭐", "effects": ["Объединение Кореи"], "requirements": ["Modernize Economy", "Build Armed Forces"]}
+        ]
+    }
+}

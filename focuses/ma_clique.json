@@ -1,0 +1,10 @@
+{
+    "Ma_Clique_Tree": {
+        "Focuses": [
+            {"name": "Власть Ма Буфаня", "requirements": [], "effects": ["infantry:2", "equipment:300"], "branches_to": ["Укрепление границ", "Ислам"]},
+            {"name": "Укрепление границ", "requirements": ["Власть Ма Буфаня"], "effects": ["infantry:3"], "branches_to": ["Сопротивление"]},
+            {"name": "Ислам", "requirements": ["Власть Ма Буфаня"], "effects": ["manpower:5000"], "branches_to": ["Сопротивление"]},
+            {"name": "Сопротивление", "requirements": ["Укрепление границ", "Ислам"], "effects": ["infantry:4", "equipment:1000"], "branches_to": []}
+        ]
+    }
+}

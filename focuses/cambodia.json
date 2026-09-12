@@ -1,0 +1,10 @@
+{
+    "Cambodia": {
+        "Focuses": [
+            {"name": "Khmer Kingdom", "icon": "⭐", "effects": ["Развитие королевства"], "requirements": []},
+            {"name": "Rice Economy", "icon": "🏭", "effects": ["+1 завод"], "requirements": ["Khmer Kingdom"]},
+            {"name": "Build Army", "icon": "💂", "effects": ["+1 дивизия"], "requirements": ["Khmer Kingdom"]},
+            {"name": "National Sovereignty", "icon": "⭐", "effects": ["Независимость Камбоджи"], "requirements": ["Rice Economy", "Build Army"]}
+        ]
+    }
+}
