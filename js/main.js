@@ -26,6 +26,7 @@ import { COUNTRIES } from './data/Countries.js';
 import { t, setLanguage, getCurrentLanguage } from './i18n.js';
 import { NetworkManager } from './network/NetworkManager.js';
 import { NetworkLobby } from './network/NetworkLobby.js';
+import { NetworkSync } from './network/NetworkSync.js';
 import { NetworkMenu } from './ui/NetworkMenu.js';
 import { LobbyUI } from './ui/LobbyUI.js';
 
@@ -53,6 +54,7 @@ let queue = null;
 // Сетевая игра
 let network = null;
 let networkLobby = null;
+let networkSync = null;
 let networkMenu = null;
 let lobbyUI = null;
 
@@ -98,11 +100,13 @@ async function init() {
     // Сетевая игра
     network = new NetworkManager(world, entities, gameState);
     networkLobby = new NetworkLobby(network, gameState, world);
+    networkSync = new NetworkSync(network, world, entities, gameState);
     networkMenu = new NetworkMenu(network);
     lobbyUI = new LobbyUI(networkLobby, gameState, world, network);
 
     window._networkManager = network;
     window._networkLobby = networkLobby;
+    window._networkSync = networkSync;
     window._networkMenu = networkMenu;
     window._lobbyUI = lobbyUI;
 
@@ -778,6 +782,22 @@ function startGameFromLobby(countryId, players) {
 
     gameState.initRelations(world);
     startGameLoop();
+
+    // ─── СИНХРОНИЗАЦИЯ ───
+    if (networkSync) {
+        networkSync.enable();
+
+        if (network.isHost) {
+            // Хост — даём 1 секунду клиентам подготовиться, потом рассылаем
+            setTimeout(() => {
+                networkSync.hostSendInitialState();
+                addNotification('📡 Состояние мира разослано', 'info');
+            }, 1000);
+        } else {
+            // Клиент — ждёт initial_state
+            addNotification('⏳ Ожидание состояния мира от хоста...', 'info');
+        }
+    }
 }
 
 // ── ТУТОР ─────────────────────────────────────────────────────────────
@@ -1144,7 +1164,15 @@ function startGameLoop() {
             accumulator -= TICK_DURATION;
         }
 
-        if (dayAccumulator >= BASE_DAY_MS / (SPEED_MULTIPLIERS[gameState.gameSpeed] || 1) && gameState.gameSpeed > 0 && gameState.isGameActive) {
+        // Определяем роль: клиент или хост/одиночная
+        const isClient = network && networkSync && networkSync.enabled && !network.isHost;
+        const isHostOrSingle = !network || !networkSync || !networkSync.enabled || network.isHost;
+
+        if (isClient) {
+            // ─── КЛИЕНТ: время продвигается только через day_tick от хоста ───
+            // Ничего не делаем здесь — applyDayTick в NetworkSync продвигает gameState.days
+        } else if (dayAccumulator >= BASE_DAY_MS / (SPEED_MULTIPLIERS[gameState.gameSpeed] || 1) && gameState.gameSpeed > 0 && gameState.isGameActive) {
+            // ─── ХОСТ ИЛИ ОДИНОЧНАЯ ИГРА: продвигаем время ───
             dayAccumulator = 0;
             gameState.advanceDay();
 
@@ -1160,6 +1188,12 @@ function startGameLoop() {
             if (aiController) aiController.update();
             if (tech) tech.update();
             if (focus) focus.update();
+
+            // ─── СИНХРОНИЗАЦИЯ: хост рассылает день ───
+            if (networkSync && networkSync.enabled && network.isHost) {
+                networkSync.hostBroadcastDay();
+                networkSync.hostBroadcastStateDelta();
+            }
 
             if (gameState.ideologyChange) {
                 gameState.ideologyChange.daysLeft--;
