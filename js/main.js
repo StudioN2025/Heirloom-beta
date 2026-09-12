@@ -25,8 +25,7 @@ import { addNotification, getCountryInfo } from './utils/helpers.js';
 import { COUNTRIES } from './data/Countries.js';
 import { t, setLanguage, getCurrentLanguage } from './i18n.js';
 import { NetworkManager } from './network/NetworkManager.js?v=41';
-import { NetworkMenu } from './ui/NetworkMenu.js';
-
+import { NetworkMenu } from './ui/NetworkMenu.js?v=41';
 // Глобальные экземпляры
 let world = null;
 let entities = null;
