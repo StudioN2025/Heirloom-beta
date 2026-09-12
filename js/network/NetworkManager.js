@@ -15,20 +15,18 @@ export class NetworkManager {
         this.roomId = null;
         this.myPeerId = null;
 
-        // host: Map<peerId, DataConnection>
-        // client: [{ conn }]
         this.connections = new Map();
 
         this.hostPlayerCountry = null;
         this.clientCountries = new Map();
 
         // Колбэки
-        this.onPlayerJoined = null;       // (peerId, countryId) => {}
-        this.onPlayerLeft = null;         // (peerId) => {}
-        this.onGameStateReceived = null;  // (state) => {}
-        this.onPlayerAction = null;       // (peerId, action) => {}
-        this.onConnected = null;          // () => {}
-        this.onError = null;              // (err) => {}
+        this.onPlayerJoined = null;
+        this.onPlayerLeft = null;
+        this.onGameStateReceived = null;
+        this.onPlayerAction = null;
+        this.onConnected = null;
+        this.onError = null;
     }
 
     _isSecure() {
@@ -94,7 +92,7 @@ export class NetworkManager {
             console.log('[Net] Подключился игрок:', conn.peer);
             this.connections.set(conn.peer, conn);
 
-            // Отправляем клиенту приветствие с текущим состоянием
+            // Отправляем клиенту приветствие
             conn.send({
                 type: 'welcome',
                 roomId: this.roomId,
@@ -103,7 +101,8 @@ export class NetworkManager {
                 days: this.gs.days
             });
 
-            if (this.onPlayerJoined) this.onPlayerJoined(conn.peer, null);
+            // ВАЖНО: не вызываем onPlayerJoined здесь — клиент добавится через lobby_join
+            // (иначе будет двойное добавление и неправильное имя)
         });
 
         conn.on('data', (data) => {
@@ -220,11 +219,11 @@ export class NetworkManager {
                 break;
 
             case 'action':
-                // Сначала пробуем лобби
+                // Лобби обрабатывает свои сообщения
                 if (window._networkLobby) {
                     window._networkLobby.handleAction(fromPeerId, data.action);
                 }
-                // Потом игровые действия
+                // Игровые действия
                 if (this.onPlayerAction) this.onPlayerAction(fromPeerId, data.action);
                 break;
 
@@ -254,6 +253,15 @@ export class NetworkManager {
         }
     }
 
+    sendTo(peerId, data) {
+        const conn = this.connections.get(peerId);
+        if (conn && conn.open) {
+            conn.send(data);
+        } else {
+            console.warn('[Net] Не могу отправить: нет соединения с', peerId);
+        }
+    }
+
     broadcastState(state) {
         if (!this.isHost) return;
         const msg = { type: 'state_sync', state: state };
@@ -265,14 +273,14 @@ export class NetworkManager {
     }
 
     notifyPlayerJoined(peerId, country) {
-        const msg = { type: 'player_joined', peerId, country };
+        const msg = { type: 'player_joined', peerId: peerId, country: country };
         for (const [id, conn] of this.connections) {
             if (conn.open && id !== peerId) conn.send(msg);
         }
     }
 
     notifyPlayerLeft(peerId) {
-        const msg = { type: 'player_left', peerId };
+        const msg = { type: 'player_left', peerId: peerId };
         for (const [id, conn] of this.connections) {
             if (conn.open && id !== peerId) conn.send(msg);
         }
