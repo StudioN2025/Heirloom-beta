@@ -1,4 +1,4 @@
-// main.js — ТОЧКА ВХОДА (с сетевой игрой)
+// main.js — Точка входа с поддержкой сетевой игры и лобби
 
 import { World } from './core/World.js';
 import { EntityManager } from './core/EntityManager.js';
@@ -24,8 +24,11 @@ import { QueueSystem, TRAIN_DEFS, BUILD_DEFS } from './systems/QueueSystem.js';
 import { addNotification, getCountryInfo } from './utils/helpers.js';
 import { COUNTRIES } from './data/Countries.js';
 import { t, setLanguage, getCurrentLanguage } from './i18n.js';
-import { NetworkManager } from './network/NetworkManager.js?v=41';
-import { NetworkMenu } from './ui/NetworkMenu.js?v=41';
+import { NetworkManager } from './network/NetworkManager.js';
+import { NetworkLobby } from './network/NetworkLobby.js';
+import { NetworkMenu } from './ui/NetworkMenu.js';
+import { LobbyUI } from './ui/LobbyUI.js';
+
 // Глобальные экземпляры
 let world = null;
 let entities = null;
@@ -46,15 +49,16 @@ let diplomacy = null;
 let tech = null;
 let focus = null;
 let queue = null;
+
+// Сетевая игра
 let network = null;
+let networkLobby = null;
 let networkMenu = null;
+let lobbyUI = null;
 
 let animationFrameId = null;
 let lastTimestamp = 0;
 let needsRender = true;
-
-// Флаг: играем ли мы по сети
-let isNetworkGame = false;
 
 async function init() {
     const savedLang = getCurrentLanguage();
@@ -90,11 +94,16 @@ async function init() {
     windowsManager = new WindowsManager(world, entities, gameState, tech, focus);
     uiManager = new UIManager(world, entities, gameState, windowsManager, topBar);
 
-    // ── СЕТЕВАЯ ИГРА ──
+    // Сетевая игра
     network = new NetworkManager(world, entities, gameState);
+    networkLobby = new NetworkLobby(network, gameState, world);
     networkMenu = new NetworkMenu(network);
+    lobbyUI = new LobbyUI(networkLobby, gameState, world, network);
+
     window._networkManager = network;
+    window._networkLobby = networkLobby;
     window._networkMenu = networkMenu;
+    window._lobbyUI = lobbyUI;
 
     setupEvents();
 
@@ -155,17 +164,16 @@ async function preloadResources() {
 
 function setupEvents() {
     const btnPlay = document.getElementById('btn-play');
-    const btnNetwork = document.getElementById('btn-network');
     const btnCancel = document.getElementById('btn-cancel');
     const closeWindowBtn = document.getElementById('close-window');
     const closeSidebarBtn = document.getElementById('close-sidebar');
 
     if (btnPlay) btnPlay.onclick = () => loadGameData();
 
-    // ── СЕТЕВАЯ ИГРА ──
-    if (btnNetwork) btnNetwork.onclick = () => {
+    // СЕТЕВАЯ ИГРА
+    document.getElementById('btn-network')?.addEventListener('click', () => {
         networkMenu.open();
-    };
+    });
 
     const btnSettings = document.getElementById('btn-settings');
     if (btnSettings) btnSettings.onclick = () => {
@@ -307,7 +315,11 @@ function setupEvents() {
             if (e.touches.length === 1 && isTouchDragging) {
                 const dx = e.touches[0].clientX - touchStartX;
                 const dy = e.touches[0].clientY - touchStartY;
-                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) touchMoved = true;
+
+                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                    touchMoved = true;
+                }
+
                 renderer.camera.x -= dx / renderer.camera.zoom;
                 renderer.camera.y -= dy / renderer.camera.zoom;
                 touchStartX = e.touches[0].clientX;
@@ -317,6 +329,7 @@ function setupEvents() {
                 const dx = e.touches[0].clientX - e.touches[1].clientX;
                 const dy = e.touches[0].clientY - e.touches[1].clientY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
+
                 if (lastPinchDist > 0) {
                     const scale = dist / lastPinchDist;
                     const newZoom = renderer.camera.zoom * scale;
@@ -332,11 +345,20 @@ function setupEvents() {
             e.preventDefault();
             if (e.touches.length === 0) {
                 if (!touchMoved && Date.now() - touchStartTime < 300) {
-                    const fakeEvent = { clientX: touchStartX, clientY: touchStartY, shiftKey: false, button: 0 };
+                    const fakeEvent = {
+                        clientX: touchStartX,
+                        clientY: touchStartY,
+                        shiftKey: false,
+                        button: 0
+                    };
                     handleCanvasClick(fakeEvent);
                 }
                 if (!touchMoved && Date.now() - touchStartTime >= 500) {
-                    const fakeEvent = { clientX: touchStartX, clientY: touchStartY, preventDefault: () => {} };
+                    const fakeEvent = {
+                        clientX: touchStartX,
+                        clientY: touchStartY,
+                        preventDefault: () => {}
+                    };
                     handleCanvasRightClick(fakeEvent);
                 }
                 isTouchDragging = false;
@@ -347,8 +369,6 @@ function setupEvents() {
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-
-    // ── ГЛОБАЛЬНЫЕ ФУНКЦИИ ──
 
     window.recruitUnit = (type) => {
         uiManager.closeWindow();
@@ -391,7 +411,9 @@ function setupEvents() {
             hint.classList.remove('hidden');
         }
         addNotification(t('army.armyMoveHint'), 'info');
-        setTimeout(() => { if (hint) hint.classList.add('hidden'); }, 15000);
+        setTimeout(() => {
+            if (hint) hint.classList.add('hidden');
+        }, 15000);
     };
 
     window.startResearch = (techId) => {
@@ -406,10 +428,6 @@ function setupEvents() {
 
     window.declareWarOn = (id) => {
         diplomacy.declareWar(id);
-        // Синхронизация: сообщаем всем игрокам
-        if (isNetworkGame && network && network.isConnected()) {
-            network.broadcastAction({ kind: 'declareWar', target: id });
-        }
         uiManager.openWindow('diplomacy');
     };
 
@@ -650,81 +668,87 @@ function setupEvents() {
     gameState._selectedUnits = [];
     gameState._selectedArmyId = null;
 
-    // ═══════════════ СЕТЕВЫЕ КОЛБЭКИ ═══════════════
-
-    window._onNetworkGameStart = () => {
-        isNetworkGame = true;
-        document.getElementById('main-menu').classList.add('hidden');
-
-        // Если данные карты ещё не загружены — загружаем
-        if (world.getAllCountries().length === 0) {
-            loadGameData();
-        } else {
-            showCountrySelection();
-        }
-    };
-
-    // Хост: когда клиент подключился
-    network.onPlayerJoined = (peerId, countryId) => {
-        addNotification('👥 Игрок подключился: ' + peerId.slice(0, 8), 'info');
-        // Сообщаем всем остальным
-        if (network.isHost) {
-            network.notifyPlayerJoined(peerId, countryId);
-        }
-    };
-
-    // Игрок отключился
-    network.onPlayerLeft = (peerId) => {
-        addNotification('👋 Игрок отключился: ' + peerId.slice(0, 8), 'info');
-        if (network.isHost) {
-            network.notifyPlayerLeft(peerId);
-        }
-    };
-
-    // Получено состояние от хоста
-    network.onGameStateReceived = (data) => {
-        console.log('[Net] Получено состояние:', data);
-        if (data.type === 'welcome') {
-            addNotification('🌐 Подключено к комнате хоста (' + (data.hostCountry || '?') + ')', 'info');
-        }
-    };
-
-    // Получено действие от другого игрока
-    network.onPlayerAction = (peerId, action) => {
-        if (!action || !action.kind) return;
-        console.log('[Net] Действие от', peerId, ':', action);
-
-        switch (action.kind) {
-            case 'declareWar':
-                // Применяем войну локально (если ещё не в войне)
-                if (action.from && action.target) {
-                    if (!gameState.isAtWar(action.from, action.target)) {
-                        gameState.addWar(action.from, action.target, world);
-                        addNotification('⚔️ ' + action.from.toUpperCase() + ' объявил войну ' + action.target.toUpperCase() + '!', 'war');
-                    }
-                }
-                break;
-
-            case 'moveUnit':
-                // Перемещение юнита другим игроком
-                // В полной версии — применяем позицию
-                break;
-
-            default:
-                console.warn('[Net] Неизвестное действие:', action.kind);
-        }
-    };
+    // ── СЕТЕВАЯ ИГРА: колбэки ────────────────────────────────────────────
 
     network.onConnected = () => {
-        addNotification('✅ Сетевое соединение установлено', 'info');
+        console.log('[Net] Подключено, roomId:', network.roomId);
     };
 
-    network.onError = (err) => {
-        addNotification('❌ Сетевая ошибка: ' + (err.message || err.type || 'unknown'), 'war');
+    networkLobby.onGameStart = (players) => {
+        console.log('[Lobby] Старт игры. Игроки:', players);
+
+        lobbyUI.close();
+        document.getElementById('network-modal').classList.add('hidden');
+
+        const myPeerId = network.myPeerId;
+        const myPlayer = players.find(p => p.peerId === myPeerId);
+        if (myPlayer && myPlayer.countryId) {
+            startGameFromLobby(myPlayer.countryId, players);
+        } else {
+            addNotification('⚠️ Страна не выбрана!', 'war');
+        }
+    };
+
+    network.onPlayerJoined = (peerId, countryId) => {
+        console.log('[Net] Игрок подключился:', peerId);
+    };
+
+    network.onPlayerLeft = (peerId) => {
+        console.log('[Net] Игрок отключился:', peerId);
     };
 }
 
-// ── ТУТОР ──
+// ── СТАРТ ИГРЫ ИЗ ЛОББИ ─────────────────────────────────────────────────
+
+function startGameFromLobby(countryId, players) {
+    if (!countryId) {
+        addNotification('⚠️ Страна не выбрана!', 'war');
+        return;
+    }
+
+    gameState.myCountryId = countryId;
+    gameState.isGameActive = true;
+    gameState.setGameSpeed(1);
+    gameState.equipment = 5000;
+    gameState.days = 0;
+    gameState.gameDate = new Date(1936, 0, 1);
+
+    const cells = Array.from(world.getCountryCells(countryId));
+    gameState.manpower = cells.length * 1000;
+    gameState.maxManpower = cells.length * 1000;
+
+    if (cells.length > 0) {
+        const sortedCells = cells.sort();
+        const capital = sortedCells[0].split(',').map(Number);
+        for (let i = 0; i < 3; i++) {
+            const x = capital[0] + (i % 2);
+            const y = capital[1] + Math.floor(i / 2);
+            if (world.getCell(x, y) === countryId) {
+                const unitId = entities.createEntity(countryId, 0, x, y, 0);
+                if (combat) combat.initUnit(unitId);
+            }
+        }
+    }
+
+    document.getElementById('main-menu').classList.add('hidden');
+    document.getElementById('country-select').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    document.getElementById('game-tabs').classList.remove('hidden');
+
+    updateSpeedButtons(1);
+    if (topBar) topBar.update();
+
+    const myName = window._myPlayerName || 'player';
+    addNotification('🎌 Вы играете за ' + countryId.toUpperCase(), 'info');
+    addNotification('🌐 Сетевая игра. Игроков: ' + (players ? players.length : 1) + '. Вы: ' + myName, 'info');
+
+    if (renderer) renderer.cameraInitialized = false;
+
+    gameState.initRelations(world);
+    startGameLoop();
+}
+
+// ── ТУТОР ─────────────────────────────────────────────────────────────
 
 var TUTORIAL_STEPS = [];
 function initTutorialSteps() {
@@ -766,8 +790,11 @@ function showTutorialStep() {
 
 function nextTutorialStep() {
     tutorialStep++;
-    if (tutorialStep >= TUTORIAL_STEPS.length) closeTutorial();
-    else showTutorialStep();
+    if (tutorialStep >= TUTORIAL_STEPS.length) {
+        closeTutorial();
+    } else {
+        showTutorialStep();
+    }
 }
 
 function closeTutorial() {
@@ -904,16 +931,6 @@ function handleCanvasClick(e) {
             addNotification(t('notifications.cannotMove'), 'war');
         }
 
-        // Синхронизация перемещения
-        if (isNetworkGame && network && network.isConnected()) {
-            network.broadcastAction({
-                kind: 'moveUnit',
-                unitId: unitId,
-                x: worldPos.x,
-                y: worldPos.y
-            });
-        }
-
         gameState.selectedUnitId = null;
         gameState._selectedUnits = [];
         gameState._selectedArmyId = null;
@@ -951,11 +968,17 @@ function handleCanvasRightClick(e) {
 
     const sel = gameState._selectedUnits;
     const idx = sel.indexOf(unitId);
-    if (idx >= 0) sel.splice(idx, 1);
-    else sel.push(unitId);
+    if (idx >= 0) {
+        sel.splice(idx, 1);
+    } else {
+        sel.push(unitId);
+    }
 
-    if (sel.length === 1) gameState.selectedUnitId = sel[0];
-    else gameState.selectedUnitId = null;
+    if (sel.length === 1) {
+        gameState.selectedUnitId = sel[0];
+    } else {
+        gameState.selectedUnitId = null;
+    }
 
     if (sel.length > 0) {
         addNotification(t('army.unitsSelected') + sel.length + t('army.openArmyTab'), 'info');
@@ -964,8 +987,11 @@ function handleCanvasRightClick(e) {
 
 function handleCanvasWheel(e) {
     e.preventDefault();
-    if (e.ctrlKey) renderer.zoom(e.deltaY * 3, e.clientX, e.clientY);
-    else renderer.zoom(e.deltaY, e.clientX, e.clientY);
+    if (e.ctrlKey) {
+        renderer.zoom(e.deltaY * 3, e.clientX, e.clientY);
+    } else {
+        renderer.zoom(e.deltaY, e.clientX, e.clientY);
+    }
 }
 
 function handleKeyDown(e) {
@@ -981,10 +1007,22 @@ function handleKeyDown(e) {
     const speed = 20 / renderer.camera.zoom;
     let moved = false;
 
-    if (e.code === 'KeyW' || e.code === 'ArrowUp') { renderer.camera.y -= speed; moved = true; }
-    if (e.code === 'KeyS' || e.code === 'ArrowDown') { renderer.camera.y += speed; moved = true; }
-    if (e.code === 'KeyA' || e.code === 'ArrowLeft') { renderer.camera.x -= speed; moved = true; }
-    if (e.code === 'KeyD' || e.code === 'ArrowRight') { renderer.camera.x += speed; moved = true; }
+    if (e.code === 'KeyW' || e.code === 'ArrowUp') {
+        renderer.camera.y -= speed;
+        moved = true;
+    }
+    if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+        renderer.camera.y += speed;
+        moved = true;
+    }
+    if (e.code === 'KeyA' || e.code === 'ArrowLeft') {
+        renderer.camera.x -= speed;
+        moved = true;
+    }
+    if (e.code === 'KeyD' || e.code === 'ArrowRight') {
+        renderer.camera.x += speed;
+        moved = true;
+    }
     if (e.code === 'Equal' || e.code === 'NumpadAdd' || e.code === 'Plus') {
         renderer.zoom(-100, renderer.canvas.width / 2, renderer.canvas.height / 2);
         moved = true;
@@ -1118,6 +1156,7 @@ function startGameLoop() {
                         if (!countryInfo) return;
                         var threshold = gameState.getCapitulationThreshold(countryInfo.ideology);
                         var progress = gameState.getWarProgress(enemyId, world);
+                        if (gameState.days % 30 === 0) console.log('[Cap] ' + enemyId + ': ' + progress + '%/' + threshold + '% start=' + gameState.warStartCells[enemyId] + ' cur=' + world.getCountryCells(enemyId).size);
                         if (progress >= threshold && !window._capitulationPending) {
                             var cells = Array.from(world.getCountryCells(enemyId));
                             if (winnerId === gameState.myCountryId) {
@@ -1205,7 +1244,7 @@ function startGameLoop() {
                 }
             }
 
-            if (gameState.allianceInvitations && gameState.allianceInvitations.length > 0 && !window._capitulationPending) {
+            if (gameState.allianceInvitations && gameState.allianceInvitations.length > 0 && !window._capitulationPending && !gameState.isGameActive === false) {
                 var aInv = gameState.allianceInvitations.shift();
                 if (aInv && !gameState.areAllies(gameState.myCountryId, aInv.from)) {
                     var fromInfo = getCountryInfo(aInv.from);
@@ -1225,9 +1264,10 @@ function startGameLoop() {
             }
 
             if (topBar) topBar.update();
+
             needsRender = true;
 
-            if (gameState.days % 30 === 0 && gameState.days > 0 && gameState.autosave !== false && !isNetworkGame) {
+            if (gameState.days % 30 === 0 && gameState.days > 0 && gameState.autosave !== false) {
                 const saveData = {
                     version: '5.0',
                     timestamp: Date.now(),
@@ -1259,13 +1299,18 @@ function startGameLoop() {
     animationFrameId = requestAnimationFrame(loop);
 }
 
-function updateGame() {}
+function updateGame() {
+    // Движение обрабатывается только в дневном тике (movement.update)
+}
 
 function updateSpeedButtons(speed) {
     document.querySelectorAll('.speed-btn').forEach(btn => {
         const btnSpeed = parseInt(btn.dataset.speed);
-        if (btnSpeed === speed) btn.classList.add('active');
-        else btn.classList.remove('active');
+        if (btnSpeed === speed) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
     });
 }
 
@@ -1418,25 +1463,17 @@ function startGame(countryId) {
     addNotification(t('notifications.attackHint'), 'info');
     addNotification(t('notifications.controlsHint'), 'info');
 
-    if (isNetworkGame) {
-        addNotification('🌐 СЕТЕВАЯ ИГРА — хост: ' + (network.isHost ? 'ВЫ' : network.roomId?.slice(0, 8)), 'info');
-    }
-
     if (renderer) renderer.cameraInitialized = false;
 
     gameState.initRelations(world);
     startGameLoop();
 
-    if (!localStorage.getItem('heirloom_tutorial_done') && !isNetworkGame) {
+    if (!localStorage.getItem('heirloom_tutorial_done')) {
         startTutorial();
     }
 }
 
 function saveGame() {
-    if (isNetworkGame) {
-        addNotification('⚠️ Сохранение в сетевой игре отключено', 'war');
-        return;
-    }
     const now = new Date();
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -1498,12 +1535,6 @@ function loadGame() {
 
                 windowsManager = new WindowsManager(world, entities, gameState, tech, focus);
                 uiManager = new UIManager(world, entities, gameState, windowsManager, topBar);
-
-                // Пересоздаём сетевой менеджер с новыми ссылками
-                network = new NetworkManager(world, entities, gameState);
-                networkMenu = new NetworkMenu(network);
-                window._networkManager = network;
-                window._networkMenu = networkMenu;
 
                 gameState.isGameActive = true;
                 gameState.setGameSpeed(1);
