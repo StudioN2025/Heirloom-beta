@@ -6,43 +6,22 @@ export class NetworkLobby {
         this.gs = gameState;
         this.world = world;
 
-        // Список игроков в лобби
-        // [{ peerId, name, countryId, isHost, isReady }]
         this.players = [];
-
-        // Чат
-        this.chatMessages = []; // [{ from, text, time, isSystem }]
-
-        // Доступные страны (свободные)
+        this.chatMessages = [];
         this.availableCountries = [];
+        this.myName = null;
 
-        // Колбэки для UI
         this.onPlayersChanged = null;
         this.onChatMessage = null;
         this.onGameStart = null;
         this.onError = null;
-
-        this._bindNetwork();
     }
 
-    // ── Привязка к сети ───────────────────────────────────────────────────
+    // ── Инициализация (ХОСТ) ──────────────────────────────────────────────
 
-    _bindNetwork() {
-        this.net.onPlayerJoined = (peerId, countryId) => {
-            this._addPlayer(peerId, countryId);
-        };
-
-        this.net.onPlayerLeft = (peerId) => {
-            this._removePlayer(peerId);
-        };
-    }
-
-    // ── Инициализация (хост) ──────────────────────────────────────────────
-
-    /**
-     * Хост создаёт лобби. Он автоматически становится первым игроком.
-     */
     hostInit(myName, myCountryId) {
+        this.myName = myName;
+
         this.players = [{
             peerId: this.net.myPeerId,
             name: myName,
@@ -51,15 +30,37 @@ export class NetworkLobby {
             isReady: true
         }];
 
+        // Привязываем обработчики к сети
+        this.net.onPlayerJoined = (peerId, countryId) => {
+            console.log('[Lobby] Хост: игрок подключился', peerId);
+            this._addPlayer(peerId, countryId);
+        };
+
+        this.net.onPlayerLeft = (peerId) => {
+            console.log('[Lobby] Хост: игрок отключился', peerId);
+            this._removePlayer(peerId);
+        };
+
         this._addSystemMessage(`Лобби создано. Room ID: ${this.net.roomId}`);
         this._refreshCountries();
         if (this.onPlayersChanged) this.onPlayersChanged();
     }
 
-    /**
-     * Клиент подключается к лобби. Он отправляет хосту своё имя.
-     */
+    // ── Инициализация (КЛИЕНТ) ────────────────────────────────────────────
+
     clientInit(myName) {
+        this.myName = myName;
+
+        this.net.onPlayerJoined = (peerId, countryId) => {
+            console.log('[Lobby] Клиент: игрок подключился', peerId);
+            this._addPlayer(peerId, countryId);
+        };
+
+        this.net.onPlayerLeft = (peerId) => {
+            console.log('[Lobby] Клиент: игрок отключился', peerId);
+            this._removePlayer(peerId);
+        };
+
         // Отправляем хосту своё имя
         this.net.broadcastAction({
             kind: 'lobby_join',
@@ -67,6 +68,16 @@ export class NetworkLobby {
         });
 
         this._addSystemMessage('Подключение к лобби...');
+
+        // Если через 3 секунды список пуст — запрашиваем явно
+        setTimeout(() => {
+            if (this.players.length === 0) {
+                console.log('[Lobby] Список пуст, запрашиваю...');
+                this.net.broadcastAction({
+                    kind: 'lobby_request_players'
+                });
+            }
+        }, 3000);
     }
 
     // ── Управление игроками ───────────────────────────────────────────────
@@ -87,7 +98,7 @@ export class NetworkLobby {
 
         if (this.onPlayersChanged) this.onPlayersChanged();
 
-        // Если я хост — рассылаю всем актуальный список
+        // Хост рассылает обновление
         if (this.net.isHost) {
             this.net.broadcastAction({
                 kind: 'lobby_players',
@@ -108,7 +119,6 @@ export class NetworkLobby {
 
         if (this.onPlayersChanged) this.onPlayersChanged();
 
-        // Хост рассылает обновление
         if (this.net.isHost) {
             this.net.broadcastAction({
                 kind: 'lobby_players',
@@ -117,9 +127,6 @@ export class NetworkLobby {
         }
     }
 
-    /**
-     * Обновить имя игрока.
-     */
     setPlayerName(peerId, name) {
         const p = this.players.find(pl => pl.peerId === peerId);
         if (!p) return;
@@ -127,11 +134,7 @@ export class NetworkLobby {
         if (this.onPlayersChanged) this.onPlayersChanged();
     }
 
-    /**
-     * Игрок выбрал страну.
-     */
     selectCountry(peerId, countryId) {
-        // Проверяем, что страна свободна
         const taken = this.players.find(p => p.countryId === countryId && p.peerId !== peerId);
         if (taken) {
             if (this.onError) this.onError('Эта страна уже занята');
@@ -139,7 +142,10 @@ export class NetworkLobby {
         }
 
         const p = this.players.find(pl => pl.peerId === peerId);
-        if (!p) return false;
+        if (!p) {
+            console.warn('[Lobby] selectCountry: игрок не найден', peerId);
+            return false;
+        }
 
         p.countryId = countryId;
         p.isReady = true;
@@ -148,14 +154,12 @@ export class NetworkLobby {
 
         if (this.onPlayersChanged) this.onPlayersChanged();
 
-        // Хост рассылает обновление
         if (this.net.isHost) {
             this.net.broadcastAction({
                 kind: 'lobby_players',
                 players: this.players
             });
         } else {
-            // Клиент сообщает хосту
             this.net.broadcastAction({
                 kind: 'lobby_select_country',
                 peerId: peerId,
@@ -166,9 +170,6 @@ export class NetworkLobby {
         return true;
     }
 
-    /**
-     * Все ли игроки выбрали страны.
-     */
     isAllReady() {
         return this.players.length > 0 && this.players.every(p => p.countryId !== null);
     }
@@ -185,11 +186,9 @@ export class NetworkLobby {
             isSystem: false
         };
 
-        // Локально добавляем
         this.chatMessages.push(msg);
         if (this.onChatMessage) this.onChatMessage(msg);
 
-        // Рассылаем всем
         this.net.broadcastAction({
             kind: 'lobby_chat',
             name: senderName,
@@ -208,9 +207,6 @@ export class NetworkLobby {
         if (this.onChatMessage) this.onChatMessage(msg);
     }
 
-    /**
-     * Получено сообщение из сети.
-     */
     receiveChat(name, text) {
         const msg = {
             from: name,
@@ -229,67 +225,91 @@ export class NetworkLobby {
         const taken = new Set(this.players.map(p => p.countryId).filter(Boolean));
 
         this.availableCountries = allCountries.filter(c => !taken.has(c)).sort((a, b) => {
-            // Сортируем по размеру (крупные сверху)
             const sa = this.world.getCountryCells(a).size;
             const sb = this.world.getCountryCells(b).size;
             return sb - sa;
         });
     }
 
-    // ── Старт игры (только хост) ──────────────────────────────────────────
+    // ── Старт игры (хост) ─────────────────────────────────────────────────
 
     startGame() {
         if (!this.net.isHost) return false;
         if (!this.isAllReady()) return false;
 
-        // Рассылаем всем финальный список игроков и команду старт
         this.net.broadcastAction({
             kind: 'lobby_start',
             players: this.players
         });
 
-        // Хост тоже стартует
         if (this.onGameStart) this.onGameStart(this.players);
         return true;
     }
 
-    /**
-     * Получена команда старта (клиент).
-     */
     receiveStart(players) {
         this.players = players;
         if (this.onGameStart) this.onGameStart(players);
     }
 
-    // ── Обработка входящих сообщений лобби ────────────────────────────────
+    // ── Обработка входящих сообщений ──────────────────────────────────────
 
-    /**
-     * Вызывается из NetworkManager при получении action.
-     */
     handleAction(fromPeerId, action) {
         if (!action || !action.kind) return;
 
         switch (action.kind) {
             case 'lobby_join':
-                // Хост получил имя нового игрока
                 if (this.net.isHost) {
-                    const p = this.players.find(pl => pl.peerId === fromPeerId);
-                    if (p) {
-                        p.name = action.name;
-                        if (this.onPlayersChanged) this.onPlayersChanged();
+                    let p = this.players.find(pl => pl.peerId === fromPeerId);
+                    if (!p) {
+                        p = {
+                            peerId: fromPeerId,
+                            name: action.name || 'player',
+                            countryId: null,
+                            isHost: false,
+                            isReady: false
+                        };
+                        this.players.push(p);
                         this._addSystemMessage(`${p.name} подключился`);
-                        // Рассылаем всем
-                        this.net.broadcastAction({
+                    } else {
+                        p.name = action.name || p.name;
+                    }
+
+                    this._refreshCountries();
+                    if (this.onPlayersChanged) this.onPlayersChanged();
+
+                    // Рассылаем всем обновлённый список
+                    this.net.broadcastAction({
+                        kind: 'lobby_players',
+                        players: this.players
+                    });
+
+                    // Отправляем лично клиенту
+                    this.net.sendTo(fromPeerId, {
+                        type: 'action',
+                        action: {
                             kind: 'lobby_players',
                             players: this.players
-                        });
-                    }
+                        }
+                    });
+                }
+                break;
+
+            case 'lobby_request_players':
+                if (this.net.isHost) {
+                    console.log('[Lobby] Хост: клиент запросил список', fromPeerId);
+                    this.net.sendTo(fromPeerId, {
+                        type: 'action',
+                        action: {
+                            kind: 'lobby_players',
+                            players: this.players
+                        }
+                    });
                 }
                 break;
 
             case 'lobby_players':
-                // Клиент получил список игроков от хоста
                 if (!this.net.isHost) {
+                    console.log('[Lobby] Клиент: получил список игроков', action.players.length);
                     this.players = action.players;
                     this._refreshCountries();
                     if (this.onPlayersChanged) this.onPlayersChanged();
@@ -297,19 +317,16 @@ export class NetworkLobby {
                 break;
 
             case 'lobby_select_country':
-                // Хост получил выбор страны от клиента
                 if (this.net.isHost) {
                     this.selectCountry(fromPeerId, action.countryId);
                 }
                 break;
 
             case 'lobby_chat':
-                // Получено сообщение чата
                 this.receiveChat(action.name, action.text);
                 break;
 
             case 'lobby_start':
-                // Клиент получил команду старта
                 if (!this.net.isHost) {
                     this.receiveStart(action.players);
                 }
