@@ -59,6 +59,7 @@ let lobbyUI = null;
 let animationFrameId = null;
 let lastTimestamp = 0;
 let needsRender = true;
+let gameDataLoaded = false;
 
 async function init() {
     const savedLang = getCurrentLanguage();
@@ -112,9 +113,14 @@ async function init() {
         document.body.style.fontSize = (parseFloat(savedScale) * 14) + 'px';
         document.querySelectorAll('button').forEach(function(b) { b.style.fontSize = (parseFloat(savedScale) * 11) + 'px'; });
     }
+
+    // ЗАГРУЖАЕМ КАРТУ СРАЗУ — до показа меню
+    await loadGameData();
 }
 
 async function loadGameData() {
+    if (gameDataLoaded) return;
+
     showLoadingScreen();
     updateLoadingBar(10, t('loading.map'));
 
@@ -138,7 +144,9 @@ async function loadGameData() {
 
     updateLoadingBar(100, t('loading.done'));
     setTimeout(() => hideLoadingScreen(), 300);
-    showCountrySelection();
+
+    gameDataLoaded = true;
+    console.log('[Main] Карта загружена. Стран:', world.getAllCountries().length);
 }
 
 async function preloadResources() {
@@ -168,7 +176,7 @@ function setupEvents() {
     const closeWindowBtn = document.getElementById('close-window');
     const closeSidebarBtn = document.getElementById('close-sidebar');
 
-    if (btnPlay) btnPlay.onclick = () => loadGameData();
+    if (btnPlay) btnPlay.onclick = () => showCountrySelection();
 
     document.getElementById('btn-network')?.addEventListener('click', () => {
         networkMenu.open();
@@ -672,9 +680,6 @@ function setupEvents() {
     network.onConnected = () => {
         console.log('[Net] Подключено, roomId:', network.roomId);
     };
-
-    // ВАЖНО: НЕ перезаписываем network.onPlayerJoined / onPlayerLeft
-    // Они уже привязаны в NetworkLobby.hostInit / clientInit
 
     networkLobby.onGameStart = (players) => {
         console.log('[Lobby] Старт игры. Игроки:', players);
