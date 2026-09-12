@@ -61,11 +61,10 @@ export class LobbyUI {
         const roomId = this.net.roomId || '—';
         const serverHost = window._serverHost || '26.80.246.235';
         const serverPort = window._serverPort || 9000;
-        const connectionString = `${serverHost}:${serverPort}`;
+        const connectionString = serverHost + ':' + serverPort;
 
         return `
             <div style="display:flex;flex-direction:column;height:100%;background:#111827;">
-                <!-- Заголовок -->
                 <div style="padding:12px 16px;background:#0a0a0a;border-bottom:1px solid #374151;display:flex;justify-content:space-between;align-items:center;">
                     <div>
                         <div style="font-size:14px;font-weight:bold;color:#eab308;">🎮 ЛОББИ</div>
@@ -89,10 +88,7 @@ export class LobbyUI {
                     </div>
                 </div>
 
-                <!-- Основная область -->
                 <div style="display:flex;flex:1;overflow:hidden;">
-
-                    <!-- Игроки -->
                     <div style="flex:1;padding:16px;overflow-y:auto;border-right:1px solid #374151;">
                         <div style="font-size:12px;font-weight:bold;color:#eab308;margin-bottom:12px;">
                             👥 ИГРОКИ (<span id="lobby-player-count">0</span>)
@@ -121,7 +117,6 @@ export class LobbyUI {
                         `}
                     </div>
 
-                    <!-- Чат -->
                     <div style="width:280px;display:flex;flex-direction:column;background:#0a0a0a;">
                         <div style="padding:10px 12px;border-bottom:1px solid #374151;font-size:12px;font-weight:bold;color:#eab308;">
                             💬 ЧАТ
@@ -181,7 +176,7 @@ export class LobbyUI {
             startBtn.style.cursor = allReady ? 'pointer' : 'not-allowed';
             startHint.textContent = allReady
                 ? '✅ Все готовы! Можно начинать.'
-                : `Ждём выбора стран (${players.filter(p => p.countryId).length}/${players.length})`;
+                : 'Ждём выбора стран (' + players.filter(p => p.countryId).length + '/' + players.length + ')';
         }
     }
 
@@ -229,7 +224,7 @@ export class LobbyUI {
             el.textContent = '⚙ ' + msg.text;
         } else {
             const isMe = msg.from === this.myName;
-            el.innerHTML = `<span style="color:${isMe ? '#22c55e' : '#60a5fa'};font-weight:bold;">${this._escapeHtml(msg.from)}:</span> <span style="color:#e5e7eb;">${this._escapeHtml(msg.text)}</span>`;
+            el.innerHTML = '<span style="color:' + (isMe ? '#22c55e' : '#60a5fa') + ';font-weight:bold;">' + this._escapeHtml(msg.from) + ':</span> <span style="color:#e5e7eb;">' + this._escapeHtml(msg.text) + '</span>';
         }
 
         box.appendChild(el);
