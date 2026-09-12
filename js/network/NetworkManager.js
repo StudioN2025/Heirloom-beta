@@ -19,35 +19,24 @@ export class NetworkManager {
         // client: [{ conn }]
         this.connections = new Map();
 
-        this.hostPlayerCountry = null; // страна хоста
-        this.clientCountries = new Map(); // peerId → countryId
+        this.hostPlayerCountry = null;
+        this.clientCountries = new Map();
 
-        // Колбэки для main.js
-        this.onPlayerJoined = null;   // (peerId, countryId) => {}
-        this.onPlayerLeft = null;     // (peerId) => {}
-        this.onGameStateReceived = null; // (state) => {}
-        this.onPlayerAction = null;   // (peerId, action) => {}
-        this.onConnected = null;      // () => {}
-        this.onError = null;          // (err) => {}
+        // Колбэки
+        this.onPlayerJoined = null;       // (peerId, countryId) => {}
+        this.onPlayerLeft = null;         // (peerId) => {}
+        this.onGameStateReceived = null;  // (state) => {}
+        this.onPlayerAction = null;       // (peerId, action) => {}
+        this.onConnected = null;          // () => {}
+        this.onError = null;              // (err) => {}
     }
 
-    /**
-     * Определяет, использовать ли secure-подключение.
-     * Если игра открыта по HTTPS, PeerServer тоже должен быть HTTPS,
-     * иначе браузер заблокирует запрос (Mixed Content).
-     */
     _isSecure() {
         return window.location.protocol === 'https:';
     }
 
     // ── ХОСТ: создать комнату ─────────────────────────────────────────────
 
-    /**
-     * @param {string} serverHost — IP PeerServer (например '26.80.246.235')
-     * @param {number} serverPort — порт (9000)
-     * @param {string} serverPath — '/heirloom'
-     * @param {string} serverKey  — 'Heirloom120926'
-     */
     createRoom(serverHost, serverPort, serverPath, serverKey) {
         if (this.peer) this.disconnect();
 
@@ -188,7 +177,6 @@ export class NetworkManager {
                     reject(err);
                 });
 
-                // Таймаут на подключение
                 setTimeout(() => {
                     if (!conn.open) {
                         reject(new Error('Не удалось подключиться. Проверьте Room ID и что хост онлайн.'));
@@ -232,6 +220,11 @@ export class NetworkManager {
                 break;
 
             case 'action':
+                // Сначала пробуем лобби
+                if (window._networkLobby) {
+                    window._networkLobby.handleAction(fromPeerId, data.action);
+                }
+                // Потом игровые действия
                 if (this.onPlayerAction) this.onPlayerAction(fromPeerId, data.action);
                 break;
 
@@ -248,9 +241,6 @@ export class NetworkManager {
         }
     }
 
-    /**
-     * Отправить действие всем (кроме себя).
-     */
     broadcastAction(action) {
         const msg = {
             type: 'action',
@@ -264,9 +254,6 @@ export class NetworkManager {
         }
     }
 
-    /**
-     * Хост рассылает состояние всем клиентам.
-     */
     broadcastState(state) {
         if (!this.isHost) return;
         const msg = { type: 'state_sync', state: state };
@@ -277,9 +264,6 @@ export class NetworkManager {
         }
     }
 
-    /**
-     * Хост сообщает всем о новом игроке.
-     */
     notifyPlayerJoined(peerId, country) {
         const msg = { type: 'player_joined', peerId, country };
         for (const [id, conn] of this.connections) {
