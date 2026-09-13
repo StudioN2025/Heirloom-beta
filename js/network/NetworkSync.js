@@ -1,10 +1,13 @@
 // NetworkSync.js — Синхронизация игрового состояния между хостом и клиентами
 // Host-authoritative: хост — источник правды, клиенты применяют его состояние.
 //
-// ВАЖНО: PeerJS использует binarypack для сериализации. На больших объектах
-// (>100 КБ) он падает с RangeError. Поэтому:
-//   1. Все сообщения идут через JSON.stringify — binarypack получает строку.
-//   2. Большие сообщения (world) разбиваются на чанки по 4 КБ.
+// ВАЖНО:
+//  1. PeerJS использует binarypack. На больших объектах (>100 КБ) он падает.
+//     Поэтому все сообщения идут через JSON.stringify (binarypack получает строку).
+//  2. Большие сообщения (world) разбиваются на чанки по 4 КБ.
+//  3. handleMessage возвращает true ТОЛЬКО для своих типов (initial_state, day_tick,
+//     state_delta, _chunk). Для остальных — false, чтобы лобби/действия обрабатывались
+//     в NetworkManager.
 
 import { addNotification } from '../utils/helpers.js';
 
@@ -21,8 +24,8 @@ export class NetworkSync {
 
         this.enabled = false;
 
-        // Чанки для больших сообщений
-        this._chunkBuffer = new Map(); // key → { parts: [], total: N, msgType }
+        // Буфер чанков
+        this._chunkBuffer = new Map(); // chunkId → { parts: [], total, received, msgType }
 
         // Колбэки
         this.onInitialStateApplied = null;
@@ -43,10 +46,6 @@ export class NetworkSync {
     // ОТПРАВКА С РАЗБИВКОЙ НА ЧАНКИ
     // ═══════════════════════════════════════════════════════════════════════
 
-    /**
-     * Отправить сообщение всем клиентам.
-     * Если сообщение большое — разбить на чанки.
-     */
     _sendToAll(msg) {
         let json;
         try {
@@ -57,14 +56,12 @@ export class NetworkSync {
         }
 
         const len = json.length;
-        const CHUNK_SIZE = 4000; // 4 КБ на чанк
+        const CHUNK_SIZE = 4000; // 4 КБ
 
         if (len <= CHUNK_SIZE) {
-            // Маленькое — отправляем сразу
             console.log('[Sync] Отправка', msg.type, 'размер:', len);
             this._sendRaw(json);
         } else {
-            // Большое — разбиваем на чанки
             const chunkId = 'chunk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
             const totalChunks = Math.ceil(len / CHUNK_SIZE);
 
@@ -123,7 +120,6 @@ export class NetworkSync {
             buffer.received++;
         }
 
-        // Все чанки получены?
         if (buffer.received === buffer.total) {
             const fullJson = buffer.parts.join('');
             this._chunkBuffer.delete(key);
@@ -235,7 +231,6 @@ export class NetworkSync {
                 console.log('[Sync] GameState применён. День:', this.gs.days);
             }
 
-            // Сброс кэшей
             if (window.renderer) {
                 window.renderer._polygonCache = null;
                 window.renderer._polygonCacheVersion = 0;
@@ -260,7 +255,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ХОСТ: DAY_TICK (каждый день, маленькое)
+    // ХОСТ: DAY_TICK (каждый день)
     // ═══════════════════════════════════════════════════════════════════════
 
     hostBroadcastDay() {
@@ -293,7 +288,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ХОСТ: STATE_DELTA (раз в N дней, большое)
+    // ХОСТ: STATE_DELTA (раз в N дней)
     // ═══════════════════════════════════════════════════════════════════════
 
     hostBroadcastStateDelta() {
@@ -332,7 +327,6 @@ export class NetworkSync {
     applyStateDelta(msg) {
         if (!msg) return;
 
-        // GameState
         if (msg.gameState) {
             const d = msg.gameState;
             if (d.equipment !== undefined) this.gs.equipment = d.equipment;
@@ -350,7 +344,6 @@ export class NetworkSync {
             if (d.justifications !== undefined) this.gs.justifications = d.justifications;
         }
 
-        // Клетки
         if (msg.world && msg.world.cells) {
             this.world.cells.clear();
             this.world.countryCache.clear();
@@ -366,7 +359,6 @@ export class NetworkSync {
             if (msg.world.capitals) this.world.capitals = msg.world.capitals;
         }
 
-        // Здания
         if (msg.world && msg.world.buildings) {
             this.world.buildings.clear();
             const entries = typeof msg.world.buildings === 'string' ? msg.world.buildings.split('|') : [];
@@ -379,12 +371,10 @@ export class NetworkSync {
             }
         }
 
-        // Юниты
         if (msg.entities) {
             this.entities.deserialize(msg.entities);
         }
 
-        // Сброс кэша рендера
         if (window.renderer) {
             window.renderer._polygonCache = null;
             window.renderer._polygonCacheVersion = 0;
@@ -401,52 +391,68 @@ export class NetworkSync {
     // ОБРАБОТКА ВХОДЯЩИХ СООБЩЕНИЙ
     // ═══════════════════════════════════════════════════════════════════════
 
+    /**
+     * Возвращает TRUE только для своих типов (initial_state, day_tick,
+     * state_delta, _chunk). Для остальных — FALSE, чтобы NetworkManager
+     * передал их в лобби / игровые системы.
+     */
     handleMessage(fromPeerId, data) {
-        // Если пришла строка — парсим JSON
+        // Если пришла строка — пробуем распарсить
         if (typeof data === 'string') {
             try {
                 data = JSON.parse(data);
             } catch (e) {
-                console.warn('[Sync] JSON parse error:', e);
+                // Не JSON — не наше сообщение
                 return false;
             }
         }
 
         if (!data || !data.type) return false;
 
-        // Чанки обрабатываем отдельно
-        if (data.type === '_chunk') {
-            this._handleChunk(data);
-            return true;
-        }
-
-        // Лог для отладки
-        if (data.type !== 'day_tick') {
-            console.log('[Sync] Получено:', data.type);
-        }
-
-        this._processMessage(data);
-        return true;
-    }
-
-    _processMessage(data) {
+        // ═══════════════════════════════════════════════════════════════════
+        // Обрабатываем ТОЛЬКО свои типы
+        // ═══════════════════════════════════════════════════════════════════
         switch (data.type) {
+            case '_chunk':
+                this._handleChunk(data);
+                return true;
+
             case 'initial_state':
                 if (!this.net.isHost) {
+                    console.log('[Sync] Получено: initial_state');
                     this.applyInitialState(data);
                 }
-                break;
+                return true;
 
             case 'day_tick':
                 if (!this.net.isHost) {
                     this.applyDayTick(data);
                 }
-                break;
+                return true;
 
             case 'state_delta':
                 if (!this.net.isHost) {
+                    console.log('[Sync] Получено: state_delta');
                     this.applyStateDelta(data);
                 }
+                return true;
+
+            default:
+                // НЕ наше — пусть NetworkManager передаст в лобби / другие системы
+                return false;
+        }
+    }
+
+    _processMessage(data) {
+        switch (data.type) {
+            case 'initial_state':
+                if (!this.net.isHost) this.applyInitialState(data);
+                break;
+            case 'day_tick':
+                if (!this.net.isHost) this.applyDayTick(data);
+                break;
+            case 'state_delta':
+                if (!this.net.isHost) this.applyStateDelta(data);
                 break;
         }
     }
