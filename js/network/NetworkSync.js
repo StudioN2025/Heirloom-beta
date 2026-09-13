@@ -11,13 +11,13 @@ export class NetworkSync {
         this.gs = gameState;
 
         // Хост: рассылка состояния раз в N дней
-        this.STATE_BROADCAST_INTERVAL = 30; // раз в 30 игровых дней
+        this.STATE_BROADCAST_INTERVAL = 3; // раз в 3 игровых дня
         this.lastBroadcastDay = -1;
 
         // Настройки
         this.enabled = false;
 
-        // Колбэки для main.js
+        // Колбэки
         this.onInitialStateApplied = null;
         this.onDayTick = null;
         this.onStateDelta = null;
@@ -36,10 +36,6 @@ export class NetworkSync {
 
     // ─── ХОСТ: рассылка начального состояния ──────────────────────────────
 
-    /**
-     * Вызывается, когда хост нажал «НАЧАТЬ ИГРУ».
-     * Отправляет всем клиентам полное состояние: карта, юниты, gameState.
-     */
     hostSendInitialState() {
         if (!this.net.isHost) return;
 
@@ -48,12 +44,12 @@ export class NetworkSync {
         const state = {
             type: 'initial_state',
             world: this.world.serialize(),
+            waterCells: Array.from(this.world.waterCells),
             entities: this.entities.serialize(),
             gameState: this.gs.serialize(),
             timestamp: Date.now()
         };
 
-        // Отправляем всем
         let count = 0;
         for (const [peerId, conn] of this.net.connections) {
             if (conn.open) {
@@ -65,47 +61,113 @@ export class NetworkSync {
         console.log('[Sync] Начальное состояние отправлено', count, 'клиентам');
     }
 
-    /**
-     * Клиент применяет начальное состояние от хоста.
-     */
+    // ─── КЛИЕНТ: применение начального состояния ──────────────────────────
+
     applyInitialState(msg) {
         console.log('[Sync] Применение начального состояния от хоста...');
 
         try {
-            // Применяем мир
+            // ═══════════════════════════════════════════════════════════════
+            // 1. МИР — полная пересборка
+            // ═══════════════════════════════════════════════════════════════
             if (msg.world) {
-                const newWorld = this.world.constructor.deserialize
-                    ? this.world.constructor.deserialize(msg.world)
-                    : null;
+                const w = msg.world;
 
-                if (newWorld) {
-                    // Копируем поля из newWorld в текущий world
-                    this.world.cells = newWorld.cells;
-                    this.world.waterCells = newWorld.waterCells;
-                    this.world.buildings = newWorld.buildings;
-                    this.world.cellStats = newWorld.cellStats;
-                    this.world.countryCache = newWorld.countryCache;
-                    this.world.bounds = newWorld.bounds;
-                    this.world.capitals = newWorld.capitals;
+                // Очищаем
+                this.world.cells.clear();
+                this.world.waterCells.clear();
+                this.world.buildings.clear();
+                this.world.cellStats.clear();
+                this.world.countryCache.clear();
+
+                // Клетки
+                if (w.cells) {
+                    const entries = typeof w.cells === 'string' ? w.cells.split('|') : [];
+                    for (const entry of entries) {
+                        const [pos, owner] = entry.split(':');
+                        const [x, y] = pos.split(',').map(Number);
+                        this.world.setCell(x, y, owner);
+                    }
                 }
+
+                // Здания
+                if (w.buildings) {
+                    const entries = typeof w.buildings === 'string' ? w.buildings.split('|') : [];
+                    for (const entry of entries) {
+                        const [pos, blds] = entry.split(':');
+                        const [x, y] = pos.split(',').map(Number);
+                        for (const b of blds.split(',')) {
+                            this.world.addBuilding(x, y, b);
+                        }
+                    }
+                }
+
+                // cellStats
+                if (w.cellStats) {
+                    const entries = typeof w.cellStats === 'string' ? w.cellStats.split('|') : [];
+                    for (const entry of entries) {
+                        const colonIdx = entry.indexOf(':');
+                        if (colonIdx === -1) continue;
+                        const pos = entry.substring(0, colonIdx);
+                        const json = entry.substring(colonIdx + 1);
+                        try { this.world.cellStats.set(pos, JSON.parse(json)); } catch(e) {}
+                    }
+                }
+
+                // Bounds и capitals
+                this.world.bounds = w.bounds || { minX: -50, maxX: 50, minY: -50, maxY: 50 };
+                this.world.capitals = w.capitals || {};
+
+                console.log('[Sync] Мир применён. Клеток:', this.world.cells.size, 'стран:', this.world.countryCache.size);
             }
 
-            // Применяем юнитов
+            // Вода — отдельно
+            if (msg.waterCells) {
+                this.world.waterCells.clear();
+                for (const pos of msg.waterCells) {
+                    this.world.waterCells.add(pos);
+                }
+                console.log('[Sync] Воды применено:', this.world.waterCells.size);
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // 2. ЮНИТЫ — полная пересборка
+            // ═══════════════════════════════════════════════════════════════
             if (msg.entities) {
                 this.entities.deserialize(msg.entities);
+                console.log('[Sync] Юнитов применено:', this.entities.activeIds.length);
             }
 
-            // Применяем gameState
+            // ═══════════════════════════════════════════════════════════════
+            // 3. GameState
+            // ═══════════════════════════════════════════════════════════════
             if (msg.gameState) {
-                // Сохраняем myCountryId — он у клиента свой
                 const myCountryId = this.gs.myCountryId;
                 const myPlayerName = window._myPlayerName;
 
                 this.gs.deserialize(msg.gameState);
 
-                // Восстанавливаем своё
                 this.gs.myCountryId = myCountryId;
                 window._myPlayerName = myPlayerName;
+
+                console.log('[Sync] GameState применён. День:', this.gs.days);
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // 4. СБРОС КЭШЕЙ
+            // ═══════════════════════════════════════════════════════════════
+            if (window.renderer) {
+                window.renderer._polygonCache = null;
+                window.renderer._polygonCacheVersion = 0;
+                window.renderer.cameraInitialized = false;
+
+                if (window.renderer._colorCache) {
+                    window.renderer._colorCache.clear();
+                }
+            }
+
+            if (window.needsRender !== undefined) {
+                window.needsRender = true;
             }
 
             console.log('[Sync] Начальное состояние применено');
@@ -121,10 +183,6 @@ export class NetworkSync {
 
     // ─── ХОСТ: рассылка тика дня ──────────────────────────────────────────
 
-    /**
-     * Вызывается каждый игровой день у хоста.
-     * Рассылает текущий день всем клиентам.
-     */
     hostBroadcastDay() {
         if (!this.net.isHost || !this.enabled) return;
 
@@ -142,15 +200,17 @@ export class NetworkSync {
         }
     }
 
-    /**
-     * Клиент применяет day_tick.
-     */
     applyDayTick(msg) {
         this.gs.days = msg.day;
         this.gs.gameDate = new Date(msg.date);
-        // Скорость игры — только хоста, клиент синхронизирует
         if (msg.gameSpeed !== undefined) {
             this.gs.gameSpeed = msg.gameSpeed;
+        }
+
+        if (this.entities) this.entities.tickTraining();
+
+        if (window.needsRender !== undefined) {
+            window.needsRender = true;
         }
 
         if (this.onDayTick) this.onDayTick(msg);
@@ -158,10 +218,6 @@ export class NetworkSync {
 
     // ─── ХОСТ: рассылка дельты состояния ──────────────────────────────────
 
-    /**
-     * Раз в N дней хост рассылает ключевые поля gameState.
-     * Это «лёгкая» синхронизация — только ресурсы, войны, альянсы.
-     */
     hostBroadcastStateDelta() {
         if (!this.net.isHost || !this.enabled) return;
 
@@ -188,7 +244,10 @@ export class NetworkSync {
                 completedFocuses: [...this.gs.completedFocuses],
                 ideologyChange: this.gs.ideologyChange,
                 justifications: this.gs.justifications
-            }
+            },
+            // ─── КЛЕТКИ И ЮНИТЫ ───
+            world: this.world.serialize(),
+            entities: this.entities.serialize()
         };
 
         for (const [, conn] of this.net.connections) {
@@ -198,44 +257,82 @@ export class NetworkSync {
         }
     }
 
-    /**
-     * Клиент применяет дельту gameState.
-     */
+    // ─── КЛИЕНТ: применение дельты ────────────────────────────────────────
+
     applyStateDelta(msg) {
-        if (!msg.gameState) return;
+        if (!msg) return;
 
-        const d = msg.gameState;
+        // ─── GameState ───
+        if (msg.gameState) {
+            const d = msg.gameState;
 
-        // Ресурсы (только если это не моя страна)
-        // Хост — источник правды, клиент НЕ перезаписывает свои ресурсы
-        // Но пока клиент не может играть — перезаписываем всё
-        if (d.equipment !== undefined) this.gs.equipment = d.equipment;
-        if (d.manpower !== undefined) this.gs.manpower = d.manpower;
-        if (d.maxManpower !== undefined) this.gs.maxManpower = d.maxManpower;
-        if (d.factories !== undefined) this.gs.factories = d.factories;
+            if (d.equipment !== undefined) this.gs.equipment = d.equipment;
+            if (d.manpower !== undefined) this.gs.manpower = d.manpower;
+            if (d.maxManpower !== undefined) this.gs.maxManpower = d.maxManpower;
+            if (d.factories !== undefined) this.gs.factories = d.factories;
 
-        // Войны и альянсы
-        if (d.wars) this.gs.wars = d.wars;
-        if (d.alliances) this.gs.alliances = d.alliances.map(a => new Set(a));
-        if (d.vassals) this.gs.vassals = d.vassals;
-        if (d.relations) this.gs.relations = d.relations;
+            if (d.wars) this.gs.wars = d.wars;
+            if (d.alliances) this.gs.alliances = d.alliances.map(a => new Set(a));
+            if (d.vassals) this.gs.vassals = d.vassals;
+            if (d.relations) this.gs.relations = d.relations;
 
-        // Технологии и фокусы
-        if (d.activeResearch !== undefined) this.gs.activeResearch = d.activeResearch;
-        if (d.activeFocus !== undefined) this.gs.activeFocus = d.activeFocus;
-        if (d.completedFocuses) this.gs.completedFocuses = new Set(d.completedFocuses);
-        if (d.ideologyChange !== undefined) this.gs.ideologyChange = d.ideologyChange;
-        if (d.justifications !== undefined) this.gs.justifications = d.justifications;
+            if (d.activeResearch !== undefined) this.gs.activeResearch = d.activeResearch;
+            if (d.activeFocus !== undefined) this.gs.activeFocus = d.activeFocus;
+            if (d.completedFocuses) this.gs.completedFocuses = new Set(d.completedFocuses);
+            if (d.ideologyChange !== undefined) this.gs.ideologyChange = d.ideologyChange;
+            if (d.justifications !== undefined) this.gs.justifications = d.justifications;
+        }
+
+        // ─── КЛЕТКИ ───
+        if (msg.world && msg.world.cells) {
+            this.world.cells.clear();
+            this.world.countryCache.clear();
+
+            const entries = typeof msg.world.cells === 'string' ? msg.world.cells.split('|') : [];
+            for (const entry of entries) {
+                const [pos, owner] = entry.split(':');
+                const [x, y] = pos.split(',').map(Number);
+                this.world.setCell(x, y, owner);
+            }
+
+            // Обновляем bounds и capitals
+            if (msg.world.bounds) this.world.bounds = msg.world.bounds;
+            if (msg.world.capitals) this.world.capitals = msg.world.capitals;
+        }
+
+        // ─── ЗДАНИЯ ───
+        if (msg.world && msg.world.buildings) {
+            this.world.buildings.clear();
+            const entries = typeof msg.world.buildings === 'string' ? msg.world.buildings.split('|') : [];
+            for (const entry of entries) {
+                const [pos, blds] = entry.split(':');
+                const [x, y] = pos.split(',').map(Number);
+                for (const b of blds.split(',')) {
+                    this.world.addBuilding(x, y, b);
+                }
+            }
+        }
+
+        // ─── ЮНИТЫ ───
+        if (msg.entities) {
+            this.entities.deserialize(msg.entities);
+        }
+
+        // ─── СБРОС КЭША РЕНДЕРА ───
+        if (window.renderer) {
+            window.renderer._polygonCache = null;
+            window.renderer._polygonCacheVersion = 0;
+        }
+
+        if (window.needsRender !== undefined) {
+            window.needsRender = true;
+        }
 
         if (this.onStateDelta) this.onStateDelta(msg);
     }
 
     // ─── Обработка входящих сообщений ─────────────────────────────────────
 
-    /**
-     * Вызывается из NetworkManager при получении данных.
-     * Возвращает true, если сообщение обработано.
-     */
     handleMessage(fromPeerId, data) {
         if (!data || !data.type) return false;
 
