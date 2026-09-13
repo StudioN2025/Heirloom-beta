@@ -1,7 +1,10 @@
-// NetworkSync.js — ACK-based синхронизация
-// Хост отправляет только ИЗМЕНЕНИЯ, ждёт ACK от клиента, потом шлёт следующее.
+// NetworkSync.js — Синхронизация с сжатием gzip
+// Передаём через pako.gzip — 500 КБ → 50 КБ, без чанков.
 
 import { addNotification } from '../utils/helpers.js';
+
+// Подключаем pako через CDN (в index.html)
+// <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 
 export class NetworkSync {
     constructor(networkManager, world, entities, gameState) {
@@ -12,20 +15,16 @@ export class NetworkSync {
 
         this.enabled = false;
 
-        // ─── Хост: очередь сообщений на отправку ───
-        this._outQueue = [];           // очередь сообщений
-        this._pendingAck = null;       // сообщение, ждущее ACK
-        this._ackTimeout = null;       // таймер повтора
-        this._ackWaitMs = 3000;        // ждать ACK 3 секунды
-        this._maxRetries = 3;          // до 3 повторов
+        // Очередь + ACK
+        this._outQueue = [];
+        this._pendingAck = null;
+        this._ackTimeout = null;
+        this._ackWaitMs = 5000;   // 5 секунд (gzip быстрее, чем чанки)
+        this._maxRetries = 3;
 
-        // ─── Отслеживание изменений (хост) ───
-        this._lastSentState = null;    // последнее отправленное состояние
+        this._lastSentState = null;
 
-        // ─── Отслеживание чанков ───
-        this._chunkBuffer = new Map();
-
-        // ─── Колбэки ───
+        // Колбэки
         this.onInitialStateApplied = null;
         this.onDayTick = null;
         this.onStateDelta = null;
@@ -33,7 +32,7 @@ export class NetworkSync {
 
     enable() {
         this.enabled = true;
-        console.log('[Sync] Активирован (ACK-based). Хост:', this.net.isHost);
+        console.log('[Sync] Активирован (gzip + ACK). Хост:', this.net.isHost);
     }
 
     disable() {
@@ -44,25 +43,42 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ХОСТ: ОТПРАВКА ОЧЕРЕДИ С ACK
+    // СЖАТИЕ
     // ═══════════════════════════════════════════════════════════════════════
 
-    /**
-     * Добавить сообщение в очередь на отправку.
-     * Если очередь пуста и нет ожидающего ACK — отправить сразу.
-     */
+    _compress(json) {
+        try {
+            const binary = new TextEncoder().encode(json);
+            const compressed = pako.gzip(binary, { level: 6 });
+            return compressed;
+        } catch (e) {
+            console.error('[Sync] Ошибка сжатия:', e);
+            return null;
+        }
+    }
+
+    _decompress(uint8) {
+        try {
+            const decompressed = pako.ungzip(uint8, { to: 'string' });
+            return decompressed;
+        } catch (e) {
+            console.error('[Sync] Ошибка распаковки:', e);
+            return null;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ОЧЕРЕДЬ С ACK
+    // ═══════════════════════════════════════════════════════════════════════
+
     _enqueue(msg) {
         if (!this.net.isHost) return;
-
         this._outQueue.push(msg);
         this._trySendNext();
     }
 
     _trySendNext() {
-        // Уже ждём ACK — не отправляем
         if (this._pendingAck) return;
-
-        // Очередь пуста
         if (this._outQueue.length === 0) return;
 
         const msg = this._outQueue.shift();
@@ -73,82 +89,53 @@ export class NetworkSync {
     }
 
     _sendWithAck(msg) {
-        // Сериализуем в JSON
         let json;
         try {
             json = JSON.stringify(msg);
         } catch (e) {
             console.error('[Sync] JSON error:', e);
-            this._onAck(); // пропускаем
+            this._onAck();
             return;
         }
 
-        const len = json.length;
-        const CHUNK_SIZE = 4000;
+        const jsonSize = json.length;
+        const compressed = this._compress(json);
 
-        if (len <= CHUNK_SIZE) {
-            // Маленькое — отправляем сразу
-            console.log('[Sync] Отправка', msg.type, 'размер:', len);
-            this._sendRaw(json);
-        } else {
-            // Большое — разбиваем на чанки
-            const chunkId = 'chunk_' + Date.now();
-            const totalChunks = Math.ceil(len / CHUNK_SIZE);
-
-            console.log('[Sync] Отправка', msg.type, 'размер:', len, 'чанков:', totalChunks);
-
-            for (let i = 0; i < totalChunks; i++) {
-                const start = i * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, len);
-                const part = json.slice(start, end);
-
-                const chunkMsg = JSON.stringify({
-                    type: '_chunk',
-                    chunkId: chunkId,
-                    index: i,
-                    total: totalChunks,
-                    msgType: msg.type,
-                    data: part
-                });
-
-                this._sendRaw(chunkMsg);
-            }
+        if (!compressed) {
+            this._onAck();
+            return;
         }
 
-        // Ждём ACK с таймаутом
-        this._ackTimeout = setTimeout(() => {
-            if (this._ackRetries < this._maxRetries) {
-                this._ackRetries++;
-                console.warn('[Sync] ACK не получен, повтор', this._ackRetries);
-                this._sendWithAck(msg); // повторяем
-            } else {
-                console.error('[Sync] ACK не получен после', this._maxRetries, 'попыток');
-                this._onAck(); // пропускаем и идём дальше
-            }
-        }, this._ackWaitMs);
-    }
+        console.log('[Sync] Отправка', msg.type, 'JSON:', jsonSize, 'сжато:', compressed.length);
 
-    _sendRaw(json) {
         for (const [, conn] of this.net.connections) {
             if (conn.open) {
                 try {
-                    conn.send(json);
+                    // Отправляем как Uint8Array — PeerJS умеет бинарные данные
+                    conn.send(compressed);
                 } catch (e) {
                     console.error('[Sync] Send error:', e);
                 }
             }
         }
+
+        // Ждём ACK
+        this._ackTimeout = setTimeout(() => {
+            if (this._ackRetries < this._maxRetries) {
+                this._ackRetries++;
+                console.warn('[Sync] ACK не получен, повтор', this._ackRetries);
+                this._sendWithAck(msg);
+            } else {
+                console.error('[Sync] ACK не получен после', this._maxRetries, 'попыток');
+                this._onAck();
+            }
+        }, this._ackWaitMs);
     }
 
-    /**
-     * Получен ACK от клиента.
-     */
     _onAck() {
         this._clearAckTimeout();
         this._pendingAck = null;
         this._ackRetries = 0;
-
-        // Отправляем следующее
         setTimeout(() => this._trySendNext(), 50);
     }
 
@@ -159,33 +146,23 @@ export class NetworkSync {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // КЛИЕНТ: ПОДТВЕРЖДЕНИЕ
-    // ═══════════════════════════════════════════════════════════════════════
-
     _sendAck(msgType, day) {
-        const ack = JSON.stringify({
-            type: 'ack',
-            for: msgType,
-            day: day
-        });
+        const ack = JSON.stringify({ type: 'ack', for: msgType, day: day });
+        const compressed = this._compress(ack);
 
         for (const [, conn] of this.net.connections) {
             if (conn.open) {
                 try {
-                    conn.send(ack);
+                    conn.send(compressed);
                 } catch (e) {}
             }
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ОТПРАВКА СОБЫТИЙ (хост)
+    // ХОСТ: ОТПРАВКА
     // ═══════════════════════════════════════════════════════════════════════
 
-    /**
-     * Отправить начальное состояние (при старте).
-     */
     hostSendInitialState() {
         if (!this.net.isHost) return;
 
@@ -200,7 +177,6 @@ export class NetworkSync {
             timestamp: Date.now()
         };
 
-        // Инициализируем «последнее состояние» для отслеживания дельт
         this._lastSentState = {
             day: this.gs.days,
             cells: new Map(this.world.cells),
@@ -210,9 +186,6 @@ export class NetworkSync {
         this._enqueue(state);
     }
 
-    /**
-     * Отправить day_tick (раз в день).
-     */
     hostSendDayTick() {
         if (!this.net.isHost || !this.enabled) return;
 
@@ -226,35 +199,23 @@ export class NetworkSync {
         this._enqueue(msg);
     }
 
-    /**
-     * Отправить дельту — только ИЗМЕНЕНИЯ.
-     */
     hostSendDelta() {
         if (!this.net.isHost || !this.enabled) return;
 
         if (!this._lastSentState) {
-            // Первый раз — считаем всё изменённым
-            this._lastSentState = {
-                day: 0,
-                cells: new Map(),
-                entities: new Map()
-            };
+            this._lastSentState = { day: 0, cells: new Map(), entities: new Map() };
         }
 
-        // ─── Изменившиеся клетки ───
+        // Изменившиеся клетки
         const changedCells = [];
         for (const [pos, owner] of this.world.cells) {
-            const oldOwner = this._lastSentState.cells.get(pos);
-            if (oldOwner !== owner) {
+            if (this._lastSentState.cells.get(pos) !== owner) {
                 const [x, y] = pos.split(',').map(Number);
-                changedCells.push({ x, y, owner });
+                changedCells.push([x, y, owner]);
             }
         }
 
-        // ─── Удалённые клетки? (обычно нет) ───
-        // Пропускаем — клетки не удаляются.
-
-        // ─── Изменившиеся юниты ───
+        // Юниты
         const currentEntities = this._snapshotEntities();
         const changedEntities = [];
         const removedEntities = [];
@@ -262,19 +223,16 @@ export class NetworkSync {
         for (const [id, e] of currentEntities) {
             const old = this._lastSentState.entities.get(id);
             if (!old || old.x !== e.x || old.y !== e.y || old.hp !== e.hp ||
-                old.inCombat !== e.inCombat || old.isShip !== e.isShip ||
-                old.training !== e.training) {
+                old.inCombat !== e.inCombat || old.isShip !== e.isShip || old.training !== e.training) {
                 changedEntities.push(e);
             }
         }
 
         for (const [id] of this._lastSentState.entities) {
-            if (!currentEntities.has(id)) {
-                removedEntities.push(id);
-            }
+            if (!currentEntities.has(id)) removedEntities.push(id);
         }
 
-        // ─── GameState ───
+        // GameState
         const gsDelta = {
             day: this.gs.days,
             equipment: Math.round(this.gs.equipment),
@@ -294,9 +252,10 @@ export class NetworkSync {
 
         // Если ничего не изменилось — не отправляем
         if (changedCells.length === 0 && changedEntities.length === 0 && removedEntities.length === 0) {
-            // Но day_tick всё равно отправляем отдельно
             return;
         }
+
+        console.log('[Sync] Дельта: клеток', changedCells.length, 'юнитов', changedEntities.length, 'удалено', removedEntities.length);
 
         const delta = {
             type: 'state_delta',
@@ -307,10 +266,6 @@ export class NetworkSync {
             gameState: gsDelta
         };
 
-        console.log('[Sync] Дельта: клеток', changedCells.length,
-            'юнитов', changedEntities.length, 'удалено', removedEntities.length);
-
-        // Обновляем «последнее состояние»
         this._lastSentState = {
             day: this.gs.days,
             cells: new Map(this.world.cells),
@@ -340,16 +295,26 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ОБРАБОТКА ВХОДЯЩИХ СООБЩЕНИЙ
+    // ОБРАБОТКА ВХОДЯЩИХ
     // ═══════════════════════════════════════════════════════════════════════
 
     handleMessage(fromPeerId, data) {
-        // Sync-сообщения — только строки
-        if (typeof data !== 'string') return false;
+        // Бинарные данные от pako.gzip
+        let json = null;
+
+        if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+            const uint8 = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+            json = this._decompress(uint8);
+            if (!json) return false;
+        } else if (typeof data === 'string') {
+            json = data;
+        } else {
+            return false;
+        }
 
         let parsed;
         try {
-            parsed = JSON.parse(data);
+            parsed = JSON.parse(json);
         } catch (e) {
             return false;
         }
@@ -357,10 +322,6 @@ export class NetworkSync {
         if (!parsed || !parsed.type) return false;
 
         switch (parsed.type) {
-            case '_chunk':
-                this._handleChunk(parsed);
-                return true;
-
             case 'initial_state':
                 if (!this.net.isHost) {
                     console.log('[Sync] Получено: initial_state');
@@ -385,7 +346,6 @@ export class NetworkSync {
 
             case 'ack':
                 if (this.net.isHost) {
-                    // Хост получил ACK от клиента
                     this._onAck();
                 }
                 return true;
@@ -396,66 +356,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ОБРАБОТКА ЧАНКОВ
-    // ═══════════════════════════════════════════════════════════════════════
-
-    _handleChunk(data) {
-        const key = data.chunkId;
-
-        if (!this._chunkBuffer.has(key)) {
-            this._chunkBuffer.set(key, {
-                parts: new Array(data.total),
-                total: data.total,
-                received: 0,
-                msgType: data.msgType
-            });
-        }
-
-        const buffer = this._chunkBuffer.get(key);
-        if (buffer.parts[data.index] === undefined) {
-            buffer.parts[data.index] = data.data;
-            buffer.received++;
-        }
-
-        if (buffer.received === buffer.total) {
-            const fullJson = buffer.parts.join('');
-            this._chunkBuffer.delete(key);
-
-            try {
-                const msg = JSON.parse(fullJson);
-                console.log('[Sync] Собрано', msg.type, 'размер:', fullJson.length);
-                this._processMessage(msg);
-            } catch (e) {
-                console.error('[Sync] Ошибка парсинга собранного сообщения:', e);
-            }
-        }
-    }
-
-    _processMessage(msg) {
-        switch (msg.type) {
-            case 'initial_state':
-                if (!this.net.isHost) {
-                    this.applyInitialState(msg);
-                    this._sendAck('initial_state', msg.gameState ? msg.gameState.days : 0);
-                }
-                break;
-            case 'day_tick':
-                if (!this.net.isHost) {
-                    this.applyDayTick(msg);
-                    this._sendAck('day_tick', msg.day);
-                }
-                break;
-            case 'state_delta':
-                if (!this.net.isHost) {
-                    this.applyStateDelta(msg);
-                    this._sendAck('state_delta', msg.day);
-                }
-                break;
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // ПРИМЕНЕНИЕ СОСТОЯНИЯ (клиент)
+    // ПРИМЕНЕНИЕ (клиент)
     // ═══════════════════════════════════════════════════════════════════════
 
     applyInitialState(msg) {
@@ -464,7 +365,6 @@ export class NetworkSync {
         try {
             if (msg.world) {
                 const w = msg.world;
-
                 this.world.cells.clear();
                 this.world.waterCells.clear();
                 this.world.buildings.clear();
@@ -479,40 +379,30 @@ export class NetworkSync {
                         this.world.setCell(x, y, owner);
                     }
                 }
-
                 if (w.buildings) {
                     const entries = typeof w.buildings === 'string' ? w.buildings.split('|') : [];
                     for (const entry of entries) {
                         const [pos, blds] = entry.split(':');
                         const [x, y] = pos.split(',').map(Number);
-                        for (const b of blds.split(',')) {
-                            this.world.addBuilding(x, y, b);
-                        }
+                        for (const b of blds.split(',')) this.world.addBuilding(x, y, b);
                     }
                 }
-
                 if (w.cellStats) {
                     const entries = typeof w.cellStats === 'string' ? w.cellStats.split('|') : [];
                     for (const entry of entries) {
-                        const colonIdx = entry.indexOf(':');
-                        if (colonIdx === -1) continue;
-                        const pos = entry.substring(0, colonIdx);
-                        const json = entry.substring(colonIdx + 1);
-                        try { this.world.cellStats.set(pos, JSON.parse(json)); } catch(e) {}
+                        const ci = entry.indexOf(':');
+                        if (ci === -1) continue;
+                        try { this.world.cellStats.set(entry.substring(0, ci), JSON.parse(entry.substring(ci + 1))); } catch(e) {}
                     }
                 }
-
                 this.world.bounds = w.bounds || { minX: -50, maxX: 50, minY: -50, maxY: 50 };
                 this.world.capitals = w.capitals || {};
-
                 console.log('[Sync] Мир применён. Клеток:', this.world.cells.size);
             }
 
             if (msg.waterCells) {
                 this.world.waterCells.clear();
-                for (const pos of msg.waterCells) {
-                    this.world.waterCells.add(pos);
-                }
+                for (const pos of msg.waterCells) this.world.waterCells.add(pos);
             }
 
             if (msg.entities) {
@@ -533,15 +423,12 @@ export class NetworkSync {
                 window.renderer._polygonCache = null;
                 window.renderer.cameraInitialized = false;
             }
-            if (window.needsRender !== undefined) {
-                window.needsRender = true;
-            }
+            if (window.needsRender !== undefined) window.needsRender = true;
 
             console.log('[Sync] Начальное состояние применено');
             addNotification('✅ Состояние мира загружено', 'info');
 
             if (this.onInitialStateApplied) this.onInitialStateApplied();
-
         } catch (err) {
             console.error('[Sync] Ошибка:', err);
         }
@@ -550,23 +437,15 @@ export class NetworkSync {
     applyDayTick(msg) {
         this.gs.days = msg.day;
         this.gs.gameDate = new Date(msg.date);
-        if (msg.gameSpeed !== undefined) {
-            this.gs.gameSpeed = msg.gameSpeed;
-        }
-
+        if (msg.gameSpeed !== undefined) this.gs.gameSpeed = msg.gameSpeed;
         if (this.entities) this.entities.tickTraining();
-
-        if (window.needsRender !== undefined) {
-            window.needsRender = true;
-        }
-
+        if (window.needsRender !== undefined) window.needsRender = true;
         if (this.onDayTick) this.onDayTick(msg);
     }
 
     applyStateDelta(msg) {
         if (!msg) return;
 
-        // GameState
         if (msg.gameState) {
             const d = msg.gameState;
             if (d.equipment !== undefined) this.gs.equipment = d.equipment;
@@ -584,41 +463,32 @@ export class NetworkSync {
             if (d.justifications !== undefined) this.gs.justifications = d.justifications;
         }
 
-        // Изменившиеся клетки
         if (msg.cells && Array.isArray(msg.cells)) {
             for (const c of msg.cells) {
-                this.world.setCell(c.x, c.y, c.owner);
+                this.world.setCell(c[0], c[1], c[2]);
             }
-            console.log('[Sync] Клеток обновлено:', msg.cells.length);
         }
 
-        // Изменившиеся юниты
         if (msg.entities && Array.isArray(msg.entities)) {
             for (const e of msg.entities) {
                 const id = e.id;
                 if (!this.entities.active[id]) {
-                    // Новый юнит — создаём
                     this.entities.active[id] = 1;
                     this.entities.owner[id] = e.owner;
                     this.entities.type[id] = e.type;
                     this.entities.maxHp[id] = e.maxHp;
                     this.entities.nextId = Math.max(this.entities.nextId, id + 1);
-
                     const pkey = e.x + ',' + e.y;
                     if (!this.entities.positionIndex.has(pkey)) this.entities.positionIndex.set(pkey, new Set());
                     this.entities.positionIndex.get(pkey).add(id);
-
                     if (!this.entities.ownerIndex.has(e.owner)) this.entities.ownerIndex.set(e.owner, new Set());
                     this.entities.ownerIndex.get(e.owner).add(id);
-
                     this.entities._markActiveDirty();
                 } else {
-                    // Существующий — обновляем позицию
                     if (this.entities.x[id] !== e.x || this.entities.y[id] !== e.y) {
                         this.entities.moveTo(id, e.x, e.y);
                     }
                 }
-
                 this.entities.x[id] = e.x;
                 this.entities.y[id] = e.y;
                 this.entities.hp[id] = e.hp;
@@ -626,25 +496,14 @@ export class NetworkSync {
                 this.entities.isShip[id] = e.isShip;
                 this.entities.training[id] = e.training;
             }
-            console.log('[Sync] Юнитов обновлено:', msg.entities.length);
         }
 
-        // Удалённые юниты
         if (msg.removed && Array.isArray(msg.removed)) {
-            for (const id of msg.removed) {
-                this.entities.removeEntity(id);
-            }
-            console.log('[Sync] Юнитов удалено:', msg.removed.length);
+            for (const id of msg.removed) this.entities.removeEntity(id);
         }
 
-        // Сброс кэша рендера
-        if (window.renderer) {
-            window.renderer._polygonCache = null;
-        }
-
-        if (window.needsRender !== undefined) {
-            window.needsRender = true;
-        }
+        if (window.renderer) window.renderer._polygonCache = null;
+        if (window.needsRender !== undefined) window.needsRender = true;
 
         if (this.onStateDelta) this.onStateDelta(msg);
     }
