@@ -1,10 +1,7 @@
-// NetworkSync.js — Синхронизация с сжатием gzip
-// Передаём через pako.gzip — 500 КБ → 50 КБ, без чанков.
+// NetworkSync.js — Синхронизация с ACK-based передачей чанками
+// Разбиваем большие сообщения на куски по 20 КБ, ждём ACK на каждый.
 
 import { addNotification } from '../utils/helpers.js';
-
-// Подключаем pako через CDN (в index.html)
-// <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 
 export class NetworkSync {
     constructor(networkManager, world, entities, gameState) {
@@ -15,16 +12,25 @@ export class NetworkSync {
 
         this.enabled = false;
 
-        // Очередь + ACK
+        // ACK
         this._outQueue = [];
         this._pendingAck = null;
         this._ackTimeout = null;
-        this._ackWaitMs = 5000;   // 5 секунд (gzip быстрее, чем чанки)
+        this._ackWaitMs = 10000;
         this._maxRetries = 3;
+
+        // Отправка чанками
+        this._CHUNK_SIZE = 20000;  // 20 КБ
+        this._currentMessage = null;      // текущее большое сообщение
+        this._currentChunks = [];         // разбитые чанки
+        this._currentChunkIndex = 0;      // индекс текущего
+        this._messageId = 0;              // ID текущего сообщения
+
+        // Приём чанков
+        this._incomingChunks = new Map();  // msgId → { parts: [], total: N, received }
 
         this._lastSentState = null;
 
-        // Колбэки
         this.onInitialStateApplied = null;
         this.onDayTick = null;
         this.onStateDelta = null;
@@ -32,7 +38,7 @@ export class NetworkSync {
 
     enable() {
         this.enabled = true;
-        console.log('[Sync] Активирован (gzip + ACK). Хост:', this.net.isHost);
+        console.log('[Sync] Активирован (chunked + ACK). Хост:', this.net.isHost);
     }
 
     disable() {
@@ -40,35 +46,12 @@ export class NetworkSync {
         this._clearAckTimeout();
         this._outQueue = [];
         this._pendingAck = null;
+        this._currentMessage = null;
+        this._currentChunks = [];
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // СЖАТИЕ
-    // ═══════════════════════════════════════════════════════════════════════
-
-    _compress(json) {
-        try {
-            const binary = new TextEncoder().encode(json);
-            const compressed = pako.gzip(binary, { level: 6 });
-            return compressed;
-        } catch (e) {
-            console.error('[Sync] Ошибка сжатия:', e);
-            return null;
-        }
-    }
-
-    _decompress(uint8) {
-        try {
-            const decompressed = pako.ungzip(uint8, { to: 'string' });
-            return decompressed;
-        } catch (e) {
-            console.error('[Sync] Ошибка распаковки:', e);
-            return null;
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // ОЧЕРЕДЬ С ACK
+    // ОТПРАВКА
     // ═══════════════════════════════════════════════════════════════════════
 
     _enqueue(msg) {
@@ -82,60 +65,138 @@ export class NetworkSync {
         if (this._outQueue.length === 0) return;
 
         const msg = this._outQueue.shift();
-        this._pendingAck = msg;
+        this._currentMessage = msg;
         this._ackRetries = 0;
 
-        this._sendWithAck(msg);
+        this._startSendingMessage(msg);
     }
 
-    _sendWithAck(msg) {
+    _startSendingMessage(msg) {
         let json;
         try {
             json = JSON.stringify(msg);
         } catch (e) {
             console.error('[Sync] JSON error:', e);
-            this._onAck();
+            this._finishCurrentMessage();
             return;
         }
 
-        const jsonSize = json.length;
-        const compressed = this._compress(json);
+        const len = json.length;
 
-        if (!compressed) {
-            this._onAck();
+        if (len <= this._CHUNK_SIZE) {
+            // Маленькое — отправляем сразу
+            console.log('[Sync] Отправка', msg.type, 'размер:', len);
+            this._sendChunk({
+                type: '_chunk',
+                msgId: this._messageId++,
+                index: 0,
+                total: 1,
+                msgType: msg.type,
+                data: json
+            });
+        } else {
+            // Большое — разбиваем
+            const totalChunks = Math.ceil(len / this._CHUNK_SIZE);
+            const msgId = this._messageId++;
+
+            console.log('[Sync] Отправка', msg.type, 'размер:', len, 'чанков:', totalChunks);
+
+            this._currentChunks = [];
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * this._CHUNK_SIZE;
+                const end = Math.min(start + this._CHUNK_SIZE, len);
+                this._currentChunks.push(json.slice(start, end));
+            }
+            this._currentChunkIndex = 0;
+            this._currentMsgId = msgId;
+            this._currentTotalChunks = totalChunks;
+
+            // Отправляем первый чанк
+            this._sendNextChunk();
             return;
         }
 
-        console.log('[Sync] Отправка', msg.type, 'JSON:', jsonSize, 'сжато:', compressed.length);
+        // Для маленького — ждём ACK
+        this._waitForAck();
+    }
+
+    _sendNextChunk() {
+        if (this._currentChunkIndex >= this._currentTotalChunks) {
+            // Все чанки отправлены — ждём финальный ACK
+            this._waitForAck();
+            return;
+        }
+
+        const chunkMsg = {
+            type: '_chunk',
+            msgId: this._currentMsgId,
+            index: this._currentChunkIndex,
+            total: this._currentTotalChunks,
+            msgType: this._currentMessage.type,
+            data: this._currentChunks[this._currentChunkIndex]
+        };
+
+        this._sendChunk(chunkMsg);
+        this._currentChunkIndex++;
+
+        // Отправляем следующий чанк через короткую паузу
+        setTimeout(() => this._sendNextChunk(), 50);
+    }
+
+    _sendChunk(chunk) {
+        let json;
+        try {
+            json = JSON.stringify(chunk);
+        } catch (e) {
+            console.error('[Sync] chunk JSON error:', e);
+            return;
+        }
 
         for (const [, conn] of this.net.connections) {
             if (conn.open) {
                 try {
-                    // Отправляем как Uint8Array — PeerJS умеет бинарные данные
-                    conn.send(compressed);
+                    conn.send(json);
                 } catch (e) {
                     console.error('[Sync] Send error:', e);
                 }
             }
         }
+    }
 
-        // Ждём ACK
+    _waitForAck() {
+        this._clearAckTimeout();
         this._ackTimeout = setTimeout(() => {
             if (this._ackRetries < this._maxRetries) {
                 this._ackRetries++;
                 console.warn('[Sync] ACK не получен, повтор', this._ackRetries);
-                this._sendWithAck(msg);
+
+                // Повторяем отправку
+                if (this._currentChunks.length > 0) {
+                    this._currentChunkIndex = 0;
+                    this._sendNextChunk();
+                } else {
+                    this._startSendingMessage(this._currentMessage);
+                }
             } else {
                 console.error('[Sync] ACK не получен после', this._maxRetries, 'попыток');
-                this._onAck();
+                this._finishCurrentMessage();
             }
         }, this._ackWaitMs);
     }
 
     _onAck() {
         this._clearAckTimeout();
+        this._finishCurrentMessage();
+    }
+
+    _finishCurrentMessage() {
+        this._clearAckTimeout();
         this._pendingAck = null;
+        this._currentMessage = null;
+        this._currentChunks = [];
+        this._currentChunkIndex = 0;
         this._ackRetries = 0;
+
         setTimeout(() => this._trySendNext(), 50);
     }
 
@@ -146,14 +207,13 @@ export class NetworkSync {
         }
     }
 
-    _sendAck(msgType, day) {
-        const ack = JSON.stringify({ type: 'ack', for: msgType, day: day });
-        const compressed = this._compress(ack);
+    _sendAck(msgType, msgId) {
+        const ack = JSON.stringify({ type: 'ack', for: msgType, msgId: msgId });
 
         for (const [, conn] of this.net.connections) {
             if (conn.open) {
                 try {
-                    conn.send(compressed);
+                    conn.send(ack);
                 } catch (e) {}
             }
         }
@@ -206,7 +266,6 @@ export class NetworkSync {
             this._lastSentState = { day: 0, cells: new Map(), entities: new Map() };
         }
 
-        // Изменившиеся клетки
         const changedCells = [];
         for (const [pos, owner] of this.world.cells) {
             if (this._lastSentState.cells.get(pos) !== owner) {
@@ -215,7 +274,6 @@ export class NetworkSync {
             }
         }
 
-        // Юниты
         const currentEntities = this._snapshotEntities();
         const changedEntities = [];
         const removedEntities = [];
@@ -232,7 +290,6 @@ export class NetworkSync {
             if (!currentEntities.has(id)) removedEntities.push(id);
         }
 
-        // GameState
         const gsDelta = {
             day: this.gs.days,
             equipment: Math.round(this.gs.equipment),
@@ -250,7 +307,6 @@ export class NetworkSync {
             justifications: this.gs.justifications
         };
 
-        // Если ничего не изменилось — не отправляем
         if (changedCells.length === 0 && changedEntities.length === 0 && removedEntities.length === 0) {
             return;
         }
@@ -295,26 +351,15 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ОБРАБОТКА ВХОДЯЩИХ
+    // ПРИЁМ
     // ═══════════════════════════════════════════════════════════════════════
 
     handleMessage(fromPeerId, data) {
-        // Бинарные данные от pako.gzip
-        let json = null;
-
-        if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
-            const uint8 = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
-            json = this._decompress(uint8);
-            if (!json) return false;
-        } else if (typeof data === 'string') {
-            json = data;
-        } else {
-            return false;
-        }
+        if (typeof data !== 'string') return false;
 
         let parsed;
         try {
-            parsed = JSON.parse(json);
+            parsed = JSON.parse(data);
         } catch (e) {
             return false;
         }
@@ -322,25 +367,23 @@ export class NetworkSync {
         if (!parsed || !parsed.type) return false;
 
         switch (parsed.type) {
-            case 'initial_state':
+            case '_chunk':
                 if (!this.net.isHost) {
-                    console.log('[Sync] Получено: initial_state');
-                    this.applyInitialState(parsed);
-                    this._sendAck('initial_state', parsed.gameState ? parsed.gameState.days : 0);
+                    this._handleChunk(parsed);
                 }
                 return true;
 
             case 'day_tick':
                 if (!this.net.isHost) {
                     this.applyDayTick(parsed);
-                    this._sendAck('day_tick', parsed.day);
+                    this._sendAck('day_tick', 0);
                 }
                 return true;
 
             case 'state_delta':
                 if (!this.net.isHost) {
                     this.applyStateDelta(parsed);
-                    this._sendAck('state_delta', parsed.day);
+                    this._sendAck('state_delta', 0);
                 }
                 return true;
 
@@ -355,8 +398,50 @@ export class NetworkSync {
         }
     }
 
+    _handleChunk(chunk) {
+        const msgId = chunk.msgId;
+
+        if (!this._incomingChunks.has(msgId)) {
+            this._incomingChunks.set(msgId, {
+                parts: new Array(chunk.total),
+                total: chunk.total,
+                received: 0,
+                msgType: chunk.msgType
+            });
+        }
+
+        const buffer = this._incomingChunks.get(msgId);
+        if (buffer.parts[chunk.index] === undefined) {
+            buffer.parts[chunk.index] = chunk.data;
+            buffer.received++;
+        }
+
+        if (buffer.received === buffer.total) {
+            const fullJson = buffer.parts.join('');
+            this._incomingChunks.delete(msgId);
+
+            try {
+                const msg = JSON.parse(fullJson);
+                console.log('[Sync] Собрано', msg.type, 'размер:', fullJson.length);
+
+                // Отправляем ACK на полное сообщение
+                this._sendAck(msg.type, msgId);
+
+                // Применяем
+                if (msg.type === 'initial_state') {
+                    console.log('[Sync] Получено: initial_state');
+                    this.applyInitialState(msg);
+                } else if (msg.type === 'state_delta') {
+                    this.applyStateDelta(msg);
+                }
+            } catch (e) {
+                console.error('[Sync] Ошибка парсинга:', e);
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
-    // ПРИМЕНЕНИЕ (клиент)
+    // ПРИМЕНЕНИЕ
     // ═══════════════════════════════════════════════════════════════════════
 
     applyInitialState(msg) {
