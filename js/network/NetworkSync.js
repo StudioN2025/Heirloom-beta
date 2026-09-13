@@ -3,11 +3,10 @@
 //
 // ВАЖНО:
 //  1. PeerJS использует binarypack. На больших объектах (>100 КБ) он падает.
-//     Поэтому все сообщения идут через JSON.stringify (binarypack получает строку).
+//     Поэтому все sync-сообщения идут через JSON.stringify (binarypack получает строку).
 //  2. Большие сообщения (world) разбиваются на чанки по 4 КБ.
-//  3. handleMessage возвращает true ТОЛЬКО для своих типов (initial_state, day_tick,
-//     state_delta, _chunk). Для остальных — false, чтобы лобби/действия обрабатывались
-//     в NetworkManager.
+//  3. handleMessage НЕ трогает сообщения лобби. Лобби-сообщения идут ОБЪЕКТАМИ
+//     (не JSON-строками) — мы их сразу пропускаем (return false).
 
 import { addNotification } from '../utils/helpers.js';
 
@@ -18,14 +17,13 @@ export class NetworkSync {
         this.entities = entities;
         this.gs = gameState;
 
-        // Хост: рассылка дельты раз в N дней
         this.STATE_BROADCAST_INTERVAL = 3;
         this.lastBroadcastDay = -1;
 
         this.enabled = false;
 
         // Буфер чанков
-        this._chunkBuffer = new Map(); // chunkId → { parts: [], total, received, msgType }
+        this._chunkBuffer = new Map();
 
         // Колбэки
         this.onInitialStateApplied = null;
@@ -56,7 +54,7 @@ export class NetworkSync {
         }
 
         const len = json.length;
-        const CHUNK_SIZE = 4000; // 4 КБ
+        const CHUNK_SIZE = 4000;
 
         if (len <= CHUNK_SIZE) {
             console.log('[Sync] Отправка', msg.type, 'размер:', len);
@@ -255,7 +253,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ХОСТ: DAY_TICK (каждый день)
+    // ХОСТ: DAY_TICK
     // ═══════════════════════════════════════════════════════════════════════
 
     hostBroadcastDay() {
@@ -288,7 +286,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ХОСТ: STATE_DELTA (раз в N дней)
+    // ХОСТ: STATE_DELTA
     // ═══════════════════════════════════════════════════════════════════════
 
     hostBroadcastStateDelta() {
@@ -384,7 +382,7 @@ export class NetworkSync {
             window.needsRender = true;
         }
 
-        if (this.onStateDelta) this.onStateDelta(msg);
+        if (this.onStateDelta) this.onStateDelta(data);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -392,53 +390,63 @@ export class NetworkSync {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Возвращает TRUE только для своих типов (initial_state, day_tick,
-     * state_delta, _chunk). Для остальных — FALSE, чтобы NetworkManager
-     * передал их в лобби / игровые системы.
+     * Возвращает TRUE только для своих типов.
+     * Для всех остальных (лобби, действия) — FALSE.
+     *
+     * ВАЖНО: если data — НЕ строка (объект), значит это НЕ sync-сообщение.
+     * Sync-сообщения всегда приходят строками (JSON.stringify на хосте).
+     * Лобби-сообщения приходят объектами (conn.send(msg) без stringify).
      */
     handleMessage(fromPeerId, data) {
-        // Если пришла строка — пробуем распарсить
-        if (typeof data === 'string') {
-            try {
-                data = JSON.parse(data);
-            } catch (e) {
-                // Не JSON — не наше сообщение
-                return false;
-            }
+        // ═══════════════════════════════════════════════════════════════════
+        // Если data — НЕ строка, это НЕ sync-сообщение.
+        // (Sync всегда отправляет JSON.stringify → строку.)
+        // ═══════════════════════════════════════════════════════════════════
+        if (typeof data !== 'string') {
+            return false;
         }
 
-        if (!data || !data.type) return false;
+        // Парсим JSON
+        let parsed;
+        try {
+            parsed = JSON.parse(data);
+        } catch (e) {
+            // Не JSON — не наше
+            return false;
+        }
+
+        if (!parsed || !parsed.type) return false;
 
         // ═══════════════════════════════════════════════════════════════════
         // Обрабатываем ТОЛЬКО свои типы
         // ═══════════════════════════════════════════════════════════════════
-        switch (data.type) {
+        switch (parsed.type) {
             case '_chunk':
-                this._handleChunk(data);
+                this._handleChunk(parsed);
                 return true;
 
             case 'initial_state':
                 if (!this.net.isHost) {
                     console.log('[Sync] Получено: initial_state');
-                    this.applyInitialState(data);
+                    this.applyInitialState(parsed);
                 }
                 return true;
 
             case 'day_tick':
                 if (!this.net.isHost) {
-                    this.applyDayTick(data);
+                    this.applyDayTick(parsed);
                 }
                 return true;
 
             case 'state_delta':
                 if (!this.net.isHost) {
                     console.log('[Sync] Получено: state_delta');
-                    this.applyStateDelta(data);
+                    this.applyStateDelta(parsed);
                 }
                 return true;
 
             default:
-                // НЕ наше — пусть NetworkManager передаст в лобби / другие системы
+                // Не наше — пусть NetworkManager передаст дальше (лобби, действия)
                 return false;
         }
     }
