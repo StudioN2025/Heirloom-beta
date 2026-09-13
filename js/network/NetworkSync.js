@@ -1,5 +1,6 @@
 // NetworkSync.js — Синхронизация игрового состояния между хостом и клиентами
 // Host-authoritative: хост — источник правды, клиенты применяют его состояние.
+// Использует JSON.stringify, чтобы обойти ограничение binarypack на большую вложенность.
 
 import { addNotification } from '../utils/helpers.js';
 
@@ -10,20 +11,15 @@ export class NetworkSync {
         this.entities = entities;
         this.gs = gameState;
 
-        // Хост: рассылка состояния раз в N дней
-        this.STATE_BROADCAST_INTERVAL = 3; // раз в 3 игровых дня
+        this.STATE_BROADCAST_INTERVAL = 3;
         this.lastBroadcastDay = -1;
 
-        // Настройки
         this.enabled = false;
 
-        // Колбэки
         this.onInitialStateApplied = null;
         this.onDayTick = null;
         this.onStateDelta = null;
     }
-
-    // ─── Активация ────────────────────────────────────────────────────────
 
     enable() {
         this.enabled = true;
@@ -32,6 +28,32 @@ export class NetworkSync {
 
     disable() {
         this.enabled = false;
+    }
+
+    // ─── Отправка через JSON-строку (обход binarypack) ───────────────────
+
+    _sendToAll(msg) {
+        // Сериализуем в JSON, чтобы binarypack не упаковывал структуру
+        let json;
+        try {
+            json = JSON.stringify(msg);
+        } catch (e) {
+            console.error('[Sync] Ошибка JSON.stringify:', e);
+            return;
+        }
+
+        const len = json.length;
+        console.log('[Sync] Отправка сообщения', msg.type, 'размер:', len, 'байт');
+
+        for (const [, conn] of this.net.connections) {
+            if (conn.open) {
+                try {
+                    conn.send(json);
+                } catch (e) {
+                    console.error('[Sync] Ошибка отправки:', e);
+                }
+            }
+        }
     }
 
     // ─── ХОСТ: рассылка начального состояния ──────────────────────────────
@@ -50,15 +72,7 @@ export class NetworkSync {
             timestamp: Date.now()
         };
 
-        let count = 0;
-        for (const [peerId, conn] of this.net.connections) {
-            if (conn.open) {
-                conn.send(state);
-                count++;
-            }
-        }
-
-        console.log('[Sync] Начальное состояние отправлено', count, 'клиентам');
+        this._sendToAll(state);
     }
 
     // ─── КЛИЕНТ: применение начального состояния ──────────────────────────
@@ -67,20 +81,15 @@ export class NetworkSync {
         console.log('[Sync] Применение начального состояния от хоста...');
 
         try {
-            // ═══════════════════════════════════════════════════════════════
-            // 1. МИР — полная пересборка
-            // ═══════════════════════════════════════════════════════════════
             if (msg.world) {
                 const w = msg.world;
 
-                // Очищаем
                 this.world.cells.clear();
                 this.world.waterCells.clear();
                 this.world.buildings.clear();
                 this.world.cellStats.clear();
                 this.world.countryCache.clear();
 
-                // Клетки
                 if (w.cells) {
                     const entries = typeof w.cells === 'string' ? w.cells.split('|') : [];
                     for (const entry of entries) {
@@ -90,7 +99,6 @@ export class NetworkSync {
                     }
                 }
 
-                // Здания
                 if (w.buildings) {
                     const entries = typeof w.buildings === 'string' ? w.buildings.split('|') : [];
                     for (const entry of entries) {
@@ -102,7 +110,6 @@ export class NetworkSync {
                     }
                 }
 
-                // cellStats
                 if (w.cellStats) {
                     const entries = typeof w.cellStats === 'string' ? w.cellStats.split('|') : [];
                     for (const entry of entries) {
@@ -114,14 +121,12 @@ export class NetworkSync {
                     }
                 }
 
-                // Bounds и capitals
                 this.world.bounds = w.bounds || { minX: -50, maxX: 50, minY: -50, maxY: 50 };
                 this.world.capitals = w.capitals || {};
 
-                console.log('[Sync] Мир применён. Клеток:', this.world.cells.size, 'стран:', this.world.countryCache.size);
+                console.log('[Sync] Мир применён. Клеток:', this.world.cells.size);
             }
 
-            // Вода — отдельно
             if (msg.waterCells) {
                 this.world.waterCells.clear();
                 for (const pos of msg.waterCells) {
@@ -130,42 +135,29 @@ export class NetworkSync {
                 console.log('[Sync] Воды применено:', this.world.waterCells.size);
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            // 2. ЮНИТЫ — полная пересборка
-            // ═══════════════════════════════════════════════════════════════
             if (msg.entities) {
                 this.entities.deserialize(msg.entities);
                 console.log('[Sync] Юнитов применено:', this.entities.activeIds.length);
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            // 3. GameState
-            // ═══════════════════════════════════════════════════════════════
             if (msg.gameState) {
                 const myCountryId = this.gs.myCountryId;
                 const myPlayerName = window._myPlayerName;
-
                 this.gs.deserialize(msg.gameState);
-
                 this.gs.myCountryId = myCountryId;
                 window._myPlayerName = myPlayerName;
-
                 console.log('[Sync] GameState применён. День:', this.gs.days);
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            // 4. СБРОС КЭШЕЙ
-            // ═══════════════════════════════════════════════════════════════
+            // Сброс кэшей
             if (window.renderer) {
                 window.renderer._polygonCache = null;
                 window.renderer._polygonCacheVersion = 0;
                 window.renderer.cameraInitialized = false;
-
                 if (window.renderer._colorCache) {
                     window.renderer._colorCache.clear();
                 }
             }
-
             if (window.needsRender !== undefined) {
                 window.needsRender = true;
             }
@@ -177,27 +169,21 @@ export class NetworkSync {
 
         } catch (err) {
             console.error('[Sync] Ошибка применения начального состояния:', err);
-            addNotification('❌ Ошибка загрузки состояния: ' + err.message, 'war');
+            addNotification('❌ Ошибка: ' + err.message, 'war');
         }
     }
 
-    // ─── ХОСТ: рассылка тика дня ──────────────────────────────────────────
+    // ─── ХОСТ: рассылка дня ───────────────────────────────────────────────
 
     hostBroadcastDay() {
         if (!this.net.isHost || !this.enabled) return;
 
-        const msg = {
+        this._sendToAll({
             type: 'day_tick',
             day: this.gs.days,
             date: this.gs.gameDate.toISOString(),
             gameSpeed: this.gs.gameSpeed
-        };
-
-        for (const [, conn] of this.net.connections) {
-            if (conn.open) {
-                conn.send(msg);
-            }
-        }
+        });
     }
 
     applyDayTick(msg) {
@@ -216,12 +202,11 @@ export class NetworkSync {
         if (this.onDayTick) this.onDayTick(msg);
     }
 
-    // ─── ХОСТ: рассылка дельты состояния ──────────────────────────────────
+    // ─── ХОСТ: рассылка дельты ────────────────────────────────────────────
 
     hostBroadcastStateDelta() {
         if (!this.net.isHost || !this.enabled) return;
 
-        // Троттлинг
         if (this.gs.days - this.lastBroadcastDay < this.STATE_BROADCAST_INTERVAL) {
             return;
         }
@@ -245,16 +230,11 @@ export class NetworkSync {
                 ideologyChange: this.gs.ideologyChange,
                 justifications: this.gs.justifications
             },
-            // ─── КЛЕТКИ И ЮНИТЫ ───
             world: this.world.serialize(),
             entities: this.entities.serialize()
         };
 
-        for (const [, conn] of this.net.connections) {
-            if (conn.open) {
-                conn.send(delta);
-            }
-        }
+        this._sendToAll(delta);
     }
 
     // ─── КЛИЕНТ: применение дельты ────────────────────────────────────────
@@ -262,20 +242,17 @@ export class NetworkSync {
     applyStateDelta(msg) {
         if (!msg) return;
 
-        // ─── GameState ───
+        // GameState
         if (msg.gameState) {
             const d = msg.gameState;
-
             if (d.equipment !== undefined) this.gs.equipment = d.equipment;
             if (d.manpower !== undefined) this.gs.manpower = d.manpower;
             if (d.maxManpower !== undefined) this.gs.maxManpower = d.maxManpower;
             if (d.factories !== undefined) this.gs.factories = d.factories;
-
             if (d.wars) this.gs.wars = d.wars;
             if (d.alliances) this.gs.alliances = d.alliances.map(a => new Set(a));
             if (d.vassals) this.gs.vassals = d.vassals;
             if (d.relations) this.gs.relations = d.relations;
-
             if (d.activeResearch !== undefined) this.gs.activeResearch = d.activeResearch;
             if (d.activeFocus !== undefined) this.gs.activeFocus = d.activeFocus;
             if (d.completedFocuses) this.gs.completedFocuses = new Set(d.completedFocuses);
@@ -283,7 +260,7 @@ export class NetworkSync {
             if (d.justifications !== undefined) this.gs.justifications = d.justifications;
         }
 
-        // ─── КЛЕТКИ ───
+        // Клетки
         if (msg.world && msg.world.cells) {
             this.world.cells.clear();
             this.world.countryCache.clear();
@@ -295,12 +272,11 @@ export class NetworkSync {
                 this.world.setCell(x, y, owner);
             }
 
-            // Обновляем bounds и capitals
             if (msg.world.bounds) this.world.bounds = msg.world.bounds;
             if (msg.world.capitals) this.world.capitals = msg.world.capitals;
         }
 
-        // ─── ЗДАНИЯ ───
+        // Здания
         if (msg.world && msg.world.buildings) {
             this.world.buildings.clear();
             const entries = typeof msg.world.buildings === 'string' ? msg.world.buildings.split('|') : [];
@@ -313,12 +289,12 @@ export class NetworkSync {
             }
         }
 
-        // ─── ЮНИТЫ ───
+        // Юниты
         if (msg.entities) {
             this.entities.deserialize(msg.entities);
         }
 
-        // ─── СБРОС КЭША РЕНДЕРА ───
+        // Сброс кэша рендера
         if (window.renderer) {
             window.renderer._polygonCache = null;
             window.renderer._polygonCacheVersion = 0;
@@ -334,6 +310,16 @@ export class NetworkSync {
     // ─── Обработка входящих сообщений ─────────────────────────────────────
 
     handleMessage(fromPeerId, data) {
+        // Если пришла строка — парсим JSON
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch (e) {
+                console.warn('[Sync] Не удалось распарсить JSON:', e);
+                return false;
+            }
+        }
+
         if (!data || !data.type) return false;
 
         switch (data.type) {
