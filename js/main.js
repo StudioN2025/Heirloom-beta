@@ -104,15 +104,26 @@ async function init() {
     networkMenu = new NetworkMenu(network);
     lobbyUI = new LobbyUI(networkLobby, gameState, world, network);
 
+    // ═══════════════════════════════════════════════════════════════════
+    // ЭКСПОРТ ГЛОБАЛЬНЫХ ССЫЛОК (для NetworkSync)
+    // ═══════════════════════════════════════════════════════════════════
     window._networkManager = network;
     window._networkLobby = networkLobby;
     window._networkSync = networkSync;
     window._networkMenu = networkMenu;
     window._lobbyUI = lobbyUI;
+
     window.world = world;
     window.entities = entities;
     window.gameState = gameState;
     window.renderer = renderer;
+
+    // КРИТИЧНО: экспорт topBar, uiManager и функции форс-рендера
+    window._topBar = topBar;
+    window._uiManager = uiManager;
+    window.forceRender = () => {
+        needsRender = true;
+    };
 
     setupEvents();
 
@@ -366,7 +377,7 @@ function setupEvents() {
                 renderer.camera.y -= dy / renderer.camera.zoom;
                 touchStartX = e.touches[0].clientX;
                 touchStartY = e.touches[0].clientY;
-                needsRender = true;
+                window.forceRender();
             } else if (e.touches.length === 2) {
                 const dx = e.touches[0].clientX - e.touches[1].clientX;
                 const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -375,10 +386,10 @@ function setupEvents() {
                     const scale = dist / lastPinchDist;
                     const newZoom = renderer.camera.zoom * scale;
                     renderer.camera.zoom = Math.min(Math.max(newZoom, 0.15), 3);
-                    needsRender = true;
+                    window.forceRender();
                 }
                 lastPinchDist = dist;
-                needsRender = true;
+                window.forceRender();
             }
         }, { passive: false });
 
@@ -1013,6 +1024,7 @@ function handleCanvasWheel(e) {
     } else {
         renderer.zoom(e.deltaY, e.clientX, e.clientY);
     }
+    window.forceRender();
 }
 
 function handleKeyDown(e) {
@@ -1035,7 +1047,10 @@ function handleKeyDown(e) {
     if (e.code === 'Equal' || e.code === 'NumpadAdd' || e.code === 'Plus') { renderer.zoom(-100, renderer.canvas.width / 2, renderer.canvas.height / 2); moved = true; }
     if (e.code === 'Minus' || e.code === 'NumpadSubtract') { renderer.zoom(100, renderer.canvas.width / 2, renderer.canvas.height / 2); moved = true; }
 
-    if (moved) e.preventDefault();
+    if (moved) {
+        window.forceRender();
+        e.preventDefault();
+    }
 }
 
 function handleKeyUp(e) {}
@@ -1115,12 +1130,14 @@ function startGameLoop() {
             accumulator -= TICK_DURATION;
         }
 
-        // Определяем роль: клиент или хост/одиночная
+        // Определяем роль
         const isClient = network && networkSync && networkSync.enabled && !network.isHost;
 
         if (isClient) {
-            // ─── КЛИЕНТ: время продвигается только через day_tick от хоста ───
-            // Ничего не делаем здесь — applyDayTick продвигает gameState.days
+            // ─── КЛИЕНТ: время продвигается через day_tick ───
+            // Ничего не делаем — applyDayTick меняет gameState.days
+            // Но UI нужно обновлять
+            if (topBar) topBar.update();
         } else if (dayAccumulator >= BASE_DAY_MS / (SPEED_MULTIPLIERS[gameState.gameSpeed] || 1) && gameState.gameSpeed > 0 && gameState.isGameActive) {
             // ─── ХОСТ ИЛИ ОДИНОЧНАЯ ИГРА ───
             dayAccumulator = 0;
@@ -1139,10 +1156,10 @@ function startGameLoop() {
             if (tech) tech.update();
             if (focus) focus.update();
 
-            // ─── СИНХРОНИЗАЦИЯ: day_tick + дельта ───
+            // ─── СИНХРОНИЗАЦИЯ ───
             if (networkSync && networkSync.enabled && network.isHost) {
-                networkSync.hostSendDayTick();   // каждый день
-                networkSync.hostSendDelta();     // только изменения
+                networkSync.hostSendDayTick();
+                networkSync.hostSendDelta();
             }
 
             if (gameState.ideologyChange) {
