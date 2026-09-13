@@ -1,5 +1,6 @@
 // NetworkSync.js — Синхронизация с ACK-based передачей чанками
 // Разбиваем большие сообщения на куски по 20 КБ, ждём ACK на каждый.
+// Форсируем рендер через window.forceRender() и обновляем UI через window._topBar.
 
 import { addNotification } from '../utils/helpers.js';
 
@@ -12,25 +13,28 @@ export class NetworkSync {
 
         this.enabled = false;
 
-        // ACK
+        // ─── ACK ───
         this._outQueue = [];
         this._pendingAck = null;
         this._ackTimeout = null;
         this._ackWaitMs = 10000;
         this._maxRetries = 3;
 
-        // Отправка чанками
+        // ─── Отправка чанками ───
         this._CHUNK_SIZE = 20000;  // 20 КБ
-        this._currentMessage = null;      // текущее большое сообщение
-        this._currentChunks = [];         // разбитые чанки
-        this._currentChunkIndex = 0;      // индекс текущего
-        this._messageId = 0;              // ID текущего сообщения
+        this._currentMessage = null;
+        this._currentChunks = [];
+        this._currentChunkIndex = 0;
+        this._currentMsgId = 0;
+        this._currentTotalChunks = 0;
+        this._messageId = 0;
 
-        // Приём чанков
-        this._incomingChunks = new Map();  // msgId → { parts: [], total: N, received }
+        // ─── Приём чанков ───
+        this._incomingChunks = new Map();  // msgId → { parts, total, received, msgType }
 
         this._lastSentState = null;
 
+        // ─── Колбэки ───
         this.onInitialStateApplied = null;
         this.onDayTick = null;
         this.onStateDelta = null;
@@ -51,7 +55,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ОТПРАВКА
+    // ОТПРАВКА (хост)
     // ═══════════════════════════════════════════════════════════════════════
 
     _enqueue(msg) {
@@ -66,6 +70,7 @@ export class NetworkSync {
 
         const msg = this._outQueue.shift();
         this._currentMessage = msg;
+        this._pendingAck = msg;   // помечаем как ожидающее ACK
         this._ackRetries = 0;
 
         this._startSendingMessage(msg);
@@ -84,7 +89,7 @@ export class NetworkSync {
         const len = json.length;
 
         if (len <= this._CHUNK_SIZE) {
-            // Маленькое — отправляем сразу
+            // Маленькое — отправляем сразу как один чанк
             console.log('[Sync] Отправка', msg.type, 'размер:', len);
             this._sendChunk({
                 type: '_chunk',
@@ -94,6 +99,8 @@ export class NetworkSync {
                 msgType: msg.type,
                 data: json
             });
+            // Ждём ACK
+            this._waitForAck();
         } else {
             // Большое — разбиваем
             const totalChunks = Math.ceil(len / this._CHUNK_SIZE);
@@ -111,13 +118,9 @@ export class NetworkSync {
             this._currentMsgId = msgId;
             this._currentTotalChunks = totalChunks;
 
-            // Отправляем первый чанк
+            // Отправляем первый чанк, потом следующий
             this._sendNextChunk();
-            return;
         }
-
-        // Для маленького — ждём ACK
-        this._waitForAck();
     }
 
     _sendNextChunk() {
@@ -139,8 +142,8 @@ export class NetworkSync {
         this._sendChunk(chunkMsg);
         this._currentChunkIndex++;
 
-        // Отправляем следующий чанк через короткую паузу
-        setTimeout(() => this._sendNextChunk(), 50);
+        // Отправляем следующий чанк через паузу
+        setTimeout(() => this._sendNextChunk(), 30);
     }
 
     _sendChunk(chunk) {
@@ -171,10 +174,10 @@ export class NetworkSync {
                 console.warn('[Sync] ACK не получен, повтор', this._ackRetries);
 
                 // Повторяем отправку
-                if (this._currentChunks.length > 0) {
+                if (this._currentChunks && this._currentChunks.length > 0) {
                     this._currentChunkIndex = 0;
                     this._sendNextChunk();
-                } else {
+                } else if (this._currentMessage) {
                     this._startSendingMessage(this._currentMessage);
                 }
             } else {
@@ -197,6 +200,7 @@ export class NetworkSync {
         this._currentChunkIndex = 0;
         this._ackRetries = 0;
 
+        // Отправляем следующее из очереди
         setTimeout(() => this._trySendNext(), 50);
     }
 
@@ -220,7 +224,7 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ХОСТ: ОТПРАВКА
+    // ХОСТ: ОТПРАВКА СОСТОЯНИЯ
     // ═══════════════════════════════════════════════════════════════════════
 
     hostSendInitialState() {
@@ -266,6 +270,7 @@ export class NetworkSync {
             this._lastSentState = { day: 0, cells: new Map(), entities: new Map() };
         }
 
+        // ─── Изменившиеся клетки ───
         const changedCells = [];
         for (const [pos, owner] of this.world.cells) {
             if (this._lastSentState.cells.get(pos) !== owner) {
@@ -274,6 +279,7 @@ export class NetworkSync {
             }
         }
 
+        // ─── Юниты ───
         const currentEntities = this._snapshotEntities();
         const changedEntities = [];
         const removedEntities = [];
@@ -290,6 +296,7 @@ export class NetworkSync {
             if (!currentEntities.has(id)) removedEntities.push(id);
         }
 
+        // ─── GameState ───
         const gsDelta = {
             day: this.gs.days,
             equipment: Math.round(this.gs.equipment),
@@ -307,6 +314,7 @@ export class NetworkSync {
             justifications: this.gs.justifications
         };
 
+        // Если ничего не изменилось — не отправляем
         if (changedCells.length === 0 && changedEntities.length === 0 && removedEntities.length === 0) {
             return;
         }
@@ -351,10 +359,11 @@ export class NetworkSync {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ПРИЁМ
+    // ОБРАБОТКА ВХОДЯЩИХ
     // ═══════════════════════════════════════════════════════════════════════
 
     handleMessage(fromPeerId, data) {
+        // Sync-сообщения — только строки
         if (typeof data !== 'string') return false;
 
         let parsed;
@@ -432,16 +441,19 @@ export class NetworkSync {
                     console.log('[Sync] Получено: initial_state');
                     this.applyInitialState(msg);
                 } else if (msg.type === 'state_delta') {
+                    console.log('[Sync] Получено: state_delta');
                     this.applyStateDelta(msg);
+                } else if (msg.type === 'day_tick') {
+                    this.applyDayTick(msg);
                 }
             } catch (e) {
-                console.error('[Sync] Ошибка парсинга:', e);
+                console.error('[Sync] Ошибка парсинга собранного:', e);
             }
         }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ПРИМЕНЕНИЕ
+    // ПРИМЕНЕНИЕ (клиент)
     // ═══════════════════════════════════════════════════════════════════════
 
     applyInitialState(msg) {
@@ -504,18 +516,22 @@ export class NetworkSync {
                 console.log('[Sync] GameState применён. День:', this.gs.days);
             }
 
+            // ─── ФОРСИРУЕМ РЕНДЕР И UI ───
             if (window.renderer) {
                 window.renderer._polygonCache = null;
+                window.renderer._polygonCacheVersion = 0;
                 window.renderer.cameraInitialized = false;
+                if (window.renderer._colorCache) window.renderer._colorCache.clear();
             }
-            if (window.needsRender !== undefined) window.needsRender = true;
+            if (window.forceRender) window.forceRender();
+            if (window._topBar) window._topBar.update();
 
             console.log('[Sync] Начальное состояние применено');
             addNotification('✅ Состояние мира загружено', 'info');
 
             if (this.onInitialStateApplied) this.onInitialStateApplied();
         } catch (err) {
-            console.error('[Sync] Ошибка:', err);
+            console.error('[Sync] Ошибка применения начального состояния:', err);
         }
     }
 
@@ -523,14 +539,20 @@ export class NetworkSync {
         this.gs.days = msg.day;
         this.gs.gameDate = new Date(msg.date);
         if (msg.gameSpeed !== undefined) this.gs.gameSpeed = msg.gameSpeed;
+
         if (this.entities) this.entities.tickTraining();
-        if (window.needsRender !== undefined) window.needsRender = true;
+
+        // ─── ФОРСИРУЕМ РЕНДЕР И UI ───
+        if (window.forceRender) window.forceRender();
+        if (window._topBar) window._topBar.update();
+
         if (this.onDayTick) this.onDayTick(msg);
     }
 
     applyStateDelta(msg) {
         if (!msg) return;
 
+        // ─── GameState ───
         if (msg.gameState) {
             const d = msg.gameState;
             if (d.equipment !== undefined) this.gs.equipment = d.equipment;
@@ -548,32 +570,41 @@ export class NetworkSync {
             if (d.justifications !== undefined) this.gs.justifications = d.justifications;
         }
 
+        // ─── Клетки ───
         if (msg.cells && Array.isArray(msg.cells)) {
             for (const c of msg.cells) {
                 this.world.setCell(c[0], c[1], c[2]);
             }
+            console.log('[Sync] Клеток обновлено:', msg.cells.length);
         }
 
+        // ─── Юниты ───
         if (msg.entities && Array.isArray(msg.entities)) {
             for (const e of msg.entities) {
                 const id = e.id;
                 if (!this.entities.active[id]) {
+                    // Новый юнит
                     this.entities.active[id] = 1;
                     this.entities.owner[id] = e.owner;
                     this.entities.type[id] = e.type;
                     this.entities.maxHp[id] = e.maxHp;
                     this.entities.nextId = Math.max(this.entities.nextId, id + 1);
+
                     const pkey = e.x + ',' + e.y;
                     if (!this.entities.positionIndex.has(pkey)) this.entities.positionIndex.set(pkey, new Set());
                     this.entities.positionIndex.get(pkey).add(id);
+
                     if (!this.entities.ownerIndex.has(e.owner)) this.entities.ownerIndex.set(e.owner, new Set());
                     this.entities.ownerIndex.get(e.owner).add(id);
+
                     this.entities._markActiveDirty();
                 } else {
+                    // Существующий — обновляем позицию
                     if (this.entities.x[id] !== e.x || this.entities.y[id] !== e.y) {
                         this.entities.moveTo(id, e.x, e.y);
                     }
                 }
+
                 this.entities.x[id] = e.x;
                 this.entities.y[id] = e.y;
                 this.entities.hp[id] = e.hp;
@@ -583,12 +614,20 @@ export class NetworkSync {
             }
         }
 
+        // ─── Удалённые юниты ───
         if (msg.removed && Array.isArray(msg.removed)) {
-            for (const id of msg.removed) this.entities.removeEntity(id);
+            for (const id of msg.removed) {
+                this.entities.removeEntity(id);
+            }
         }
 
-        if (window.renderer) window.renderer._polygonCache = null;
-        if (window.needsRender !== undefined) window.needsRender = true;
+        // ─── ФОРСИРУЕМ РЕНДЕР И UI ───
+        if (window.renderer) {
+            window.renderer._polygonCache = null;
+            window.renderer._polygonCacheVersion = 0;
+        }
+        if (window.forceRender) window.forceRender();
+        if (window._topBar) window._topBar.update();
 
         if (this.onStateDelta) this.onStateDelta(msg);
     }
